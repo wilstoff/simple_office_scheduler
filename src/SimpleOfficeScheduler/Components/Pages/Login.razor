@@ -1,0 +1,77 @@
+@page "/login"
+@layout MainLayout
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Authentication
+@inject SimpleOfficeScheduler.Services.Auth.IAuthenticationService AuthService
+@inject NavigationManager Navigation
+@inject IHttpContextAccessor HttpContextAccessor
+@attribute [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+
+<PageTitle>Login - Office Scheduler</PageTitle>
+
+<div class="row justify-content-center">
+    <div class="col-md-4">
+        <h3>Login</h3>
+
+        @if (!string.IsNullOrEmpty(_errorMessage))
+        {
+            <div class="alert alert-danger">@_errorMessage</div>
+        }
+
+        <EditForm Model="Input" OnValidSubmit="HandleLogin" FormName="login">
+            <div class="mb-3">
+                <label for="username" class="form-label">Username</label>
+                <InputText id="username" class="form-control" @bind-Value="Input.Username" />
+            </div>
+
+            <div class="mb-3">
+                <label for="password" class="form-label">Password</label>
+                <InputText id="password" type="password" class="form-control" @bind-Value="Input.Password" />
+            </div>
+
+            <button type="submit" class="btn btn-primary w-100">Login</button>
+        </EditForm>
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromForm]
+    private LoginModel Input { get; set; } = new();
+
+    private string? _errorMessage;
+
+    private async Task HandleLogin()
+    {
+        var httpContext = HttpContextAccessor.HttpContext;
+        if (httpContext is null) return;
+
+        var result = await AuthService.ValidateAsync(Input.Username, Input.Password);
+
+        if (result.Success && result.User is not null)
+        {
+            var claims = new List<Claim>
+            {
+                new(ClaimTypes.NameIdentifier, result.User.Id.ToString()),
+                new(ClaimTypes.Name, result.User.Username),
+                new("DisplayName", result.User.DisplayName),
+                new(ClaimTypes.Email, result.User.Email)
+            };
+
+            var identity = new ClaimsIdentity(claims, "Cookies");
+            var principal = new ClaimsPrincipal(identity);
+
+            await httpContext.SignInAsync("Cookies", principal);
+            Navigation.NavigateTo("/", forceLoad: true);
+        }
+        else
+        {
+            _errorMessage = result.ErrorMessage ?? "Login failed.";
+        }
+    }
+
+    private class LoginModel
+    {
+        public string Username { get; set; } = string.Empty;
+        public string Password { get; set; } = string.Empty;
+    }
+}

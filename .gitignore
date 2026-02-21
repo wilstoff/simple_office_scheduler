@@ -1,0 +1,29 @@
+## .NET
+bin/
+obj/
+*.user
+*.suo
+*.cache
+*.vs/
+.vs/
+
+## SQLite database
+*.db
+*.db-shm
+*.db-wal
+
+## Node
+node_modules/
+
+## Build output
+src/SimpleOfficeScheduler/wwwroot/js/fullcalendar-interop.js
+src/SimpleOfficeScheduler/wwwroot/js/fullcalendar-interop.js.map
+
+## IDE
+.idea/
+*.swp
+*~
+
+## OS
+Thumbs.db
+.DS_Store

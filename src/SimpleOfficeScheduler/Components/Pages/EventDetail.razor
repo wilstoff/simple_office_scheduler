@@ -1,0 +1,216 @@
+@page "/events/{EventId:int}"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@inject IEventService EventService
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Navigation
+@rendermode InteractiveServer
+
+<PageTitle>Event Details - Office Scheduler</PageTitle>
+
+@if (_event is null)
+{
+    <p>Loading...</p>
+    return;
+}
+
+<div class="d-flex justify-content-between align-items-start mb-3">
+    <div>
+        <h3>@_event.Title</h3>
+        <p class="text-muted">Owned by @_event.Owner.DisplayName</p>
+    </div>
+    @if (_isOwner)
+    {
+        <div>
+            <a href="events/@EventId/edit" class="btn btn-outline-secondary btn-sm me-1">Edit</a>
+        </div>
+    }
+</div>
+
+@if (!string.IsNullOrEmpty(_event.Description))
+{
+    <p>@_event.Description</p>
+}
+
+@if (!string.IsNullOrEmpty(_message))
+{
+    <div class="alert @(_messageIsError ? "alert-danger" : "alert-success")">@_message</div>
+}
+
+<div class="row mb-3">
+    <div class="col-md-3"><strong>Capacity:</strong> @_event.Capacity per session</div>
+    <div class="col-md-3">
+        <strong>Type:</strong>
+        @if (_event.Recurrence is not null)
+        {
+            <span>@_event.Recurrence.Type (every @_event.Recurrence.Interval)</span>
+        }
+        else
+        {
+            <span>One-time</span>
+        }
+    </div>
+</div>
+
+@if (_isOwner)
+{
+    <div class="card mb-3">
+        <div class="card-body">
+            <h5 class="card-title">Transfer Ownership</h5>
+            <div class="input-group">
+                <InputNumber class="form-control" placeholder="New owner User ID" @bind-Value="_transferUserId" />
+                <button class="btn btn-outline-warning" @onclick="TransferOwnership">Transfer</button>
+            </div>
+        </div>
+    </div>
+}
+
+<h4>Upcoming Occurrences</h4>
+
+@{
+    var upcomingOccurrences = _event.Occurrences
+        .Where(o => o.StartTime > DateTime.UtcNow.AddHours(-1))
+        .OrderBy(o => o.StartTime)
+        .Take(20)
+        .ToList();
+}
+
+@if (!upcomingOccurrences.Any())
+{
+    <p>No upcoming occurrences.</p>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Date & Time</th>
+                    <th>Status</th>
+                    <th>Signups</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var occ in upcomingOccurrences)
+                {
+                    var signupCount = occ.Signups.Count;
+                    var isFull = signupCount >= _event.Capacity;
+                    var isSignedUp = occ.Signups.Any(s => s.UserId == _currentUserId);
+
+                    <tr class="@(occ.IsCancelled ? "table-secondary" : "")">
+                        <td>
+                            @occ.StartTime.ToLocalTime().ToString("ddd, MMM dd yyyy h:mm tt")
+                            - @occ.EndTime.ToLocalTime().ToString("h:mm tt")
+                        </td>
+                        <td>
+                            @if (occ.IsCancelled)
+                            {
+                                <span class="badge bg-danger">Cancelled</span>
+                            }
+                            else if (isFull)
+                            {
+                                <span class="badge bg-warning">Full</span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-success">Open</span>
+                            }
+                        </td>
+                        <td>
+                            @signupCount / @_event.Capacity
+                            @if (occ.Signups.Any())
+                            {
+                                <br />
+                                <small class="text-muted">
+                                    @string.Join(", ", occ.Signups.Select(s => s.User.DisplayName))
+                                </small>
+                            }
+                        </td>
+                        <td>
+                            @if (!occ.IsCancelled)
+                            {
+                                @if (isSignedUp)
+                                {
+                                    <button class="btn btn-sm btn-outline-danger"
+                                            @onclick="() => CancelSignUp(occ.Id)">Cancel Signup</button>
+                                }
+                                else if (!isFull)
+                                {
+                                    <button class="btn btn-sm btn-primary"
+                                            @onclick="() => SignUp(occ.Id)">Sign Up</button>
+                                }
+
+                                @if (_isOwner)
+                                {
+                                    <button class="btn btn-sm btn-outline-secondary ms-1"
+                                            @onclick="() => CancelOccurrence(occ.Id)">Cancel Session</button>
+                                }
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public int EventId { get; set; }
+
+    private Event? _event;
+    private int _currentUserId;
+    private bool _isOwner;
+    private string? _message;
+    private bool _messageIsError;
+    private int? _transferUserId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var claim = authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
+        if (claim is not null)
+            int.TryParse(claim.Value, out _currentUserId);
+
+        await LoadEvent();
+    }
+
+    private async Task LoadEvent()
+    {
+        _event = await EventService.GetEventAsync(EventId);
+        _isOwner = _event?.OwnerUserId == _currentUserId;
+    }
+
+    private async Task SignUp(int occurrenceId)
+    {
+        var (success, error) = await EventService.SignUpAsync(occurrenceId, _currentUserId);
+        _message = success ? "Successfully signed up!" : error;
+        _messageIsError = !success;
+        await LoadEvent();
+    }
+
+    private async Task CancelSignUp(int occurrenceId)
+    {
+        var (success, error) = await EventService.CancelSignUpAsync(occurrenceId, _currentUserId);
+        _message = success ? "Signup cancelled." : error;
+        _messageIsError = !success;
+        await LoadEvent();
+    }
+
+    private async Task CancelOccurrence(int occurrenceId)
+    {
+        var (success, error) = await EventService.CancelOccurrenceAsync(occurrenceId, _currentUserId);
+        _message = success ? "Occurrence cancelled." : error;
+        _messageIsError = !success;
+        await LoadEvent();
+    }
+
+    private async Task TransferOwnership()
+    {
+        if (!_transferUserId.HasValue) return;
+        var (success, error) = await EventService.TransferOwnershipAsync(EventId, _currentUserId, _transferUserId.Value);
+        _message = success ? "Ownership transferred." : error;
+        _messageIsError = !success;
+        await LoadEvent();
+    }
+}

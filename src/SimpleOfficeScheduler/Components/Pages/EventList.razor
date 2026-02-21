@@ -1,0 +1,106 @@
+@page "/events"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@inject IEventService EventService
+@rendermode InteractiveServer
+
+<PageTitle>Events - Office Scheduler</PageTitle>
+
+<h3>Events</h3>
+
+<div class="row mb-3">
+    <div class="col-md-6">
+        <div class="input-group">
+            <input type="text" class="form-control" placeholder="Search events..."
+                   @bind="_searchTerm" @bind:event="oninput" @onkeyup="HandleSearch" />
+            <button class="btn btn-outline-secondary" @onclick="Search">Search</button>
+        </div>
+    </div>
+    <div class="col-md-6 text-end">
+        <a href="events/create" class="btn btn-primary">Create Event</a>
+    </div>
+</div>
+
+@if (_events is null)
+{
+    <p>Loading...</p>
+}
+else if (!_events.Any())
+{
+    <p>No events found.</p>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table table-hover">
+            <thead>
+                <tr>
+                    <th>Title</th>
+                    <th>Owner</th>
+                    <th>Next Occurrence</th>
+                    <th>Capacity</th>
+                    <th>Recurring</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var evt in _events)
+                {
+                    var nextOccurrence = evt.Occurrences?
+                        .Where(o => !o.IsCancelled && o.StartTime > DateTime.UtcNow)
+                        .OrderBy(o => o.StartTime)
+                        .FirstOrDefault();
+
+                    <tr>
+                        <td>@evt.Title</td>
+                        <td>@evt.Owner.DisplayName</td>
+                        <td>
+                            @if (nextOccurrence is not null)
+                            {
+                                @nextOccurrence.StartTime.ToLocalTime().ToString("MMM dd, yyyy h:mm tt")
+                            }
+                            else
+                            {
+                                <span class="text-muted">No upcoming</span>
+                            }
+                        </td>
+                        <td>@evt.Capacity</td>
+                        <td>
+                            @if (evt.Recurrence is not null)
+                            {
+                                <span class="badge bg-info">@evt.Recurrence.Type</span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-secondary">One-time</span>
+                            }
+                        </td>
+                        <td>
+                            <a href="events/@evt.Id" class="btn btn-sm btn-outline-primary">View</a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private List<Event>? _events;
+    private string? _searchTerm;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Search();
+    }
+
+    private async Task HandleSearch(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await Search();
+    }
+
+    private async Task Search()
+    {
+        _events = await EventService.SearchEventsAsync(_searchTerm);
+    }
+}

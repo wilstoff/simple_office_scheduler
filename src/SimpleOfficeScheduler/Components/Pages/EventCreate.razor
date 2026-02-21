@@ -1,0 +1,252 @@
+@page "/events/create"
+@page "/events/{EventId:int}/edit"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@inject IEventService EventService
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Navigation
+@rendermode InteractiveServer
+
+<PageTitle>@(_isEditMode ? "Edit Event" : "Create Event") - Office Scheduler</PageTitle>
+
+<h3>@(_isEditMode ? "Edit Event" : "Create Event")</h3>
+
+@if (!string.IsNullOrEmpty(_errorMessage))
+{
+    <div class="alert alert-danger">@_errorMessage</div>
+}
+
+@if (!string.IsNullOrEmpty(_successMessage))
+{
+    <div class="alert alert-success">@_successMessage</div>
+}
+
+<EditForm Model="_model" OnValidSubmit="HandleSubmit" FormName="eventForm">
+    <DataAnnotationsValidator />
+    <ValidationSummary />
+
+    <div class="row">
+        <div class="col-md-8">
+            <div class="mb-3">
+                <label for="title" class="form-label">Title</label>
+                <InputText id="title" class="form-control" @bind-Value="_model.Title" />
+            </div>
+
+            <div class="mb-3">
+                <label for="description" class="form-label">Description</label>
+                <InputTextArea id="description" class="form-control" rows="3" @bind-Value="_model.Description" />
+            </div>
+
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label for="startTime" class="form-label">Start Time</label>
+                    <InputDate id="startTime" Type="InputDateType.DateTimeLocal" class="form-control" @bind-Value="_model.StartTime" />
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label for="endTime" class="form-label">End Time</label>
+                    <InputDate id="endTime" Type="InputDateType.DateTimeLocal" class="form-control" @bind-Value="_model.EndTime" />
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label for="capacity" class="form-label">Capacity</label>
+                <InputNumber id="capacity" class="form-control" @bind-Value="_model.Capacity" min="1" />
+            </div>
+
+            <div class="mb-3">
+                <div class="form-check">
+                    <InputCheckbox id="isRecurring" class="form-check-input" @bind-Value="_model.IsRecurring" />
+                    <label for="isRecurring" class="form-check-label">Recurring Event</label>
+                </div>
+            </div>
+
+            @if (_model.IsRecurring)
+            {
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <h5 class="card-title">Recurrence Settings</h5>
+
+                        <div class="mb-3">
+                            <label for="recurrenceType" class="form-label">Frequency</label>
+                            <InputSelect id="recurrenceType" class="form-select" @bind-Value="_model.RecurrenceType">
+                                <option value="@RecurrenceType.Daily">Daily</option>
+                                <option value="@RecurrenceType.Weekly">Weekly</option>
+                                <option value="@RecurrenceType.BiWeekly">Bi-Weekly</option>
+                                <option value="@RecurrenceType.Monthly">Monthly</option>
+                            </InputSelect>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="interval" class="form-label">Every</label>
+                            <InputNumber id="interval" class="form-control" @bind-Value="_model.Interval" min="1" />
+                            <small class="form-text text-muted">
+                                @(_model.RecurrenceType switch
+                                {
+                                    RecurrenceType.Daily => "day(s)",
+                                    RecurrenceType.Weekly => "week(s)",
+                                    RecurrenceType.BiWeekly => "2-week period(s)",
+                                    RecurrenceType.Monthly => "month(s)",
+                                    _ => ""
+                                })
+                            </small>
+                        </div>
+
+                        @if (_model.RecurrenceType is RecurrenceType.Weekly or RecurrenceType.BiWeekly)
+                        {
+                            <div class="mb-3">
+                                <label class="form-label">Days of Week</label>
+                                <div class="d-flex flex-wrap gap-2">
+                                    @foreach (var day in Enum.GetValues<DayOfWeek>())
+                                    {
+                                        var isChecked = _model.DaysOfWeek.Contains(day);
+                                        <div class="form-check">
+                                            <input type="checkbox" class="form-check-input"
+                                                   id="day-@day" checked="@isChecked"
+                                                   @onchange="e => ToggleDay(day, (bool)e.Value!)" />
+                                            <label class="form-check-label" for="day-@day">@day.ToString()[..3]</label>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        }
+
+                        <div class="mb-3">
+                            <label for="endDate" class="form-label">End Date (optional)</label>
+                            <InputDate id="endDate" class="form-control" @bind-Value="_model.RecurrenceEndDate" />
+                        </div>
+                    </div>
+                </div>
+            }
+
+            <button type="submit" class="btn btn-primary" disabled="@_isSubmitting">
+                @if (_isSubmitting)
+                {
+                    <span class="spinner-border spinner-border-sm me-1"></span>
+                }
+                @(_isEditMode ? "Update Event" : "Create Event")
+            </button>
+            <a href="events" class="btn btn-secondary ms-2">Cancel</a>
+        </div>
+    </div>
+</EditForm>
+
+@code {
+    [Parameter]
+    public int? EventId { get; set; }
+
+    private EventFormModel _model = new();
+    private string? _errorMessage;
+    private string? _successMessage;
+    private bool _isSubmitting;
+    private bool _isEditMode => EventId.HasValue;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (_isEditMode)
+        {
+            var evt = await EventService.GetEventAsync(EventId!.Value);
+            if (evt is null)
+            {
+                _errorMessage = "Event not found.";
+                return;
+            }
+
+            _model = new EventFormModel
+            {
+                Title = evt.Title,
+                Description = evt.Description,
+                StartTime = evt.StartTime.ToLocalTime(),
+                EndTime = evt.EndTime.ToLocalTime(),
+                Capacity = evt.Capacity,
+                IsRecurring = evt.Recurrence is not null,
+                RecurrenceType = evt.Recurrence?.Type ?? RecurrenceType.Weekly,
+                Interval = evt.Recurrence?.Interval ?? 1,
+                DaysOfWeek = evt.Recurrence?.DaysOfWeek ?? new List<DayOfWeek>(),
+                RecurrenceEndDate = evt.Recurrence?.RecurrenceEndDate?.ToLocalTime()
+            };
+        }
+        else
+        {
+            _model.StartTime = DateTime.Now.Date.AddDays(1).AddHours(9);
+            _model.EndTime = DateTime.Now.Date.AddDays(1).AddHours(10);
+        }
+    }
+
+    private void ToggleDay(DayOfWeek day, bool isChecked)
+    {
+        if (isChecked && !_model.DaysOfWeek.Contains(day))
+            _model.DaysOfWeek.Add(day);
+        else if (!isChecked)
+            _model.DaysOfWeek.Remove(day);
+    }
+
+    private async Task HandleSubmit()
+    {
+        _isSubmitting = true;
+        _errorMessage = null;
+        _successMessage = null;
+
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var userIdClaim = authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
+        if (userIdClaim is null || !int.TryParse(userIdClaim.Value, out var userId))
+        {
+            _errorMessage = "Could not determine current user.";
+            _isSubmitting = false;
+            return;
+        }
+
+        var evt = new Event
+        {
+            Title = _model.Title,
+            Description = _model.Description,
+            StartTime = _model.StartTime.ToUniversalTime(),
+            EndTime = _model.EndTime.ToUniversalTime(),
+            Capacity = _model.Capacity
+        };
+
+        if (_model.IsRecurring)
+        {
+            evt.Recurrence = new RecurrencePattern
+            {
+                Type = _model.RecurrenceType,
+                Interval = _model.Interval,
+                DaysOfWeek = _model.DaysOfWeek,
+                RecurrenceEndDate = _model.RecurrenceEndDate?.ToUniversalTime()
+            };
+        }
+
+        if (_isEditMode)
+        {
+            evt.Id = EventId!.Value;
+            var (success, error) = await EventService.UpdateEventAsync(evt, userId);
+            if (success)
+            {
+                Navigation.NavigateTo($"events/{EventId}");
+            }
+            else
+            {
+                _errorMessage = error;
+            }
+        }
+        else
+        {
+            var created = await EventService.CreateEventAsync(evt, userId);
+            Navigation.NavigateTo($"events/{created.Id}");
+        }
+
+        _isSubmitting = false;
+    }
+
+    private class EventFormModel
+    {
+        public string Title { get; set; } = string.Empty;
+        public string? Description { get; set; }
+        public DateTime StartTime { get; set; }
+        public DateTime EndTime { get; set; }
+        public int Capacity { get; set; } = 1;
+        public bool IsRecurring { get; set; }
+        public RecurrenceType RecurrenceType { get; set; } = RecurrenceType.Weekly;
+        public int Interval { get; set; } = 1;
+        public List<DayOfWeek> DaysOfWeek { get; set; } = new();
+        public DateTime? RecurrenceEndDate { get; set; }
+    }
+}
