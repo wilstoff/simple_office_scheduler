@@ -40,7 +40,7 @@ public class EventService : IEventService
         await _db.SaveChangesAsync();
 
         // Generate occurrences
-        var horizon = DateTime.UtcNow.AddMonths(_recurrenceSettings.DefaultHorizonMonths);
+        var horizon = DateTime.Now.AddMonths(_recurrenceSettings.DefaultHorizonMonths);
         var dates = _expander.Expand(evt, horizon);
 
         foreach (var (start, end) in dates)
@@ -234,7 +234,7 @@ public class EventService : IEventService
 
         // Remove future occurrences without signups and regenerate
         var futureOccurrencesWithoutSignups = existing.Occurrences
-            .Where(o => o.StartTime > DateTime.UtcNow && !o.Signups.Any())
+            .Where(o => o.StartTime > DateTime.Now && !o.Signups.Any())
             .ToList();
 
         foreach (var occ in futureOccurrencesWithoutSignups)
@@ -243,7 +243,7 @@ public class EventService : IEventService
         }
 
         // Regenerate occurrences
-        var horizon = DateTime.UtcNow.AddMonths(_recurrenceSettings.DefaultHorizonMonths);
+        var horizon = DateTime.Now.AddMonths(_recurrenceSettings.DefaultHorizonMonths);
         var dates = _expander.Expand(existing, horizon);
 
         // Only add occurrences that don't already exist
@@ -254,7 +254,7 @@ public class EventService : IEventService
 
         foreach (var (start, end) in dates)
         {
-            if (!existingStartTimes.Contains(start) && start > DateTime.UtcNow)
+            if (!existingStartTimes.Contains(start) && start > DateTime.Now)
             {
                 _db.EventOccurrences.Add(new EventOccurrence
                 {

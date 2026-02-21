@@ -23,7 +23,7 @@ public class EventsApiController : ControllerBase
     [HttpGet("calendar")]
     public async Task<IActionResult> GetCalendarFeed([FromQuery] DateTime start, [FromQuery] DateTime end)
     {
-        var occurrences = await _eventService.GetOccurrencesInRangeAsync(start.ToUniversalTime(), end.ToUniversalTime());
+        var occurrences = await _eventService.GetOccurrencesInRangeAsync(start, end);
 
         var result = occurrences.Select(o => new
         {
@@ -71,15 +71,15 @@ public class EventsApiController : ControllerBase
         {
             Title = request.Title,
             Description = request.Description,
-            StartTime = request.StartTime.ToUniversalTime(),
-            EndTime = request.EndTime.ToUniversalTime(),
+            StartTime = request.StartTime,
+            EndTime = request.EndTime,
             Capacity = request.Capacity,
             Recurrence = request.Recurrence is not null ? new RecurrencePattern
             {
                 Type = request.Recurrence.Type,
                 DaysOfWeek = request.Recurrence.DaysOfWeek,
                 Interval = request.Recurrence.Interval,
-                RecurrenceEndDate = request.Recurrence.RecurrenceEndDate?.ToUniversalTime(),
+                RecurrenceEndDate = request.Recurrence.RecurrenceEndDate,
                 MaxOccurrences = request.Recurrence.MaxOccurrences
             } : null
         };
@@ -98,15 +98,15 @@ public class EventsApiController : ControllerBase
             Id = id,
             Title = request.Title,
             Description = request.Description,
-            StartTime = request.StartTime.ToUniversalTime(),
-            EndTime = request.EndTime.ToUniversalTime(),
+            StartTime = request.StartTime,
+            EndTime = request.EndTime,
             Capacity = request.Capacity,
             Recurrence = request.Recurrence is not null ? new RecurrencePattern
             {
                 Type = request.Recurrence.Type,
                 DaysOfWeek = request.Recurrence.DaysOfWeek,
                 Interval = request.Recurrence.Interval,
-                RecurrenceEndDate = request.Recurrence.RecurrenceEndDate?.ToUniversalTime(),
+                RecurrenceEndDate = request.Recurrence.RecurrenceEndDate,
                 MaxOccurrences = request.Recurrence.MaxOccurrences
             } : null
         };

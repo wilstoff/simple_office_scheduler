@@ -154,14 +154,14 @@
             {
                 Title = evt.Title,
                 Description = evt.Description,
-                StartTime = evt.StartTime.ToLocalTime(),
-                EndTime = evt.EndTime.ToLocalTime(),
+                StartTime = evt.StartTime,
+                EndTime = evt.EndTime,
                 Capacity = evt.Capacity,
                 IsRecurring = evt.Recurrence is not null,
                 RecurrenceType = evt.Recurrence?.Type ?? RecurrenceType.Weekly,
                 Interval = evt.Recurrence?.Interval ?? 1,
                 DaysOfWeek = evt.Recurrence?.DaysOfWeek ?? new List<DayOfWeek>(),
-                RecurrenceEndDate = evt.Recurrence?.RecurrenceEndDate?.ToLocalTime()
+                RecurrenceEndDate = evt.Recurrence?.RecurrenceEndDate
             };
         }
         else
@@ -198,8 +198,8 @@
         {
             Title = _model.Title,
             Description = _model.Description,
-            StartTime = _model.StartTime.ToUniversalTime(),
-            EndTime = _model.EndTime.ToUniversalTime(),
+            StartTime = _model.StartTime,
+            EndTime = _model.EndTime,
             Capacity = _model.Capacity
         };
 
@@ -210,7 +210,7 @@
                 Type = _model.RecurrenceType,
                 Interval = _model.Interval,
                 DaysOfWeek = _model.DaysOfWeek,
-                RecurrenceEndDate = _model.RecurrenceEndDate?.ToUniversalTime()
+                RecurrenceEndDate = _model.RecurrenceEndDate
             };
         }
 

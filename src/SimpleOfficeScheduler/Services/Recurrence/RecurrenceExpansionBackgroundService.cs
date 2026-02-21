@@ -44,7 +44,7 @@ public class RecurrenceExpansionBackgroundService : BackgroundService
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var expander = scope.ServiceProvider.GetRequiredService<RecurrenceExpander>();
 
-        var horizon = DateTime.UtcNow.AddMonths(_settings.DefaultHorizonMonths);
+        var horizon = DateTime.Now.AddMonths(_settings.DefaultHorizonMonths);
 
         var recurringEvents = await db.Events
             .Include(e => e.Occurrences)
