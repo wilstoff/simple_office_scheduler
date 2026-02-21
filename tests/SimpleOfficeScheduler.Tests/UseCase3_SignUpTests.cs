@@ -17,7 +17,7 @@ public class UseCase3_SignUpTests : IntegrationTestBase
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         // Verify signup count
-        var updated = await Client.GetFromJsonAsync<EventResponse>($"/api/events/{evt.Id}");
+        var updated = await Client.GetFromJsonAsync<EventResponse>($"/api/events/{evt.Id}", JsonOptions);
         Assert.Equal(1, updated!.Occurrences.First().SignupCount);
     }
 
@@ -92,7 +92,7 @@ public class UseCase3_SignUpTests : IntegrationTestBase
         await Client.PostAsync($"/api/events/{evt.Id}/signup/{occurrenceId}", null);
 
         // Verify signed up
-        var afterSignup = await Client.GetFromJsonAsync<EventResponse>($"/api/events/{evt.Id}");
+        var afterSignup = await Client.GetFromJsonAsync<EventResponse>($"/api/events/{evt.Id}", JsonOptions);
         Assert.Equal(1, afterSignup!.Occurrences.First().SignupCount);
 
         // Cancel sign up
@@ -100,7 +100,7 @@ public class UseCase3_SignUpTests : IntegrationTestBase
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         // Verify count decreased
-        var afterCancel = await Client.GetFromJsonAsync<EventResponse>($"/api/events/{evt.Id}");
+        var afterCancel = await Client.GetFromJsonAsync<EventResponse>($"/api/events/{evt.Id}", JsonOptions);
         Assert.Equal(0, afterCancel!.Occurrences.First().SignupCount);
     }
 

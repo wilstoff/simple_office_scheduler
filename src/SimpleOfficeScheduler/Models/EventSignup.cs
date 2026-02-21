@@ -1,3 +1,5 @@
+using NodaTime;
+
 namespace SimpleOfficeScheduler.Models;
 
 public class EventSignup
@@ -7,5 +9,5 @@ public class EventSignup
     public EventOccurrence Occurrence { get; set; } = null!;
     public int UserId { get; set; }
     public AppUser User { get; set; } = null!;
-    public DateTime SignedUpAt { get; set; }
+    public Instant SignedUpAt { get; set; }
 }

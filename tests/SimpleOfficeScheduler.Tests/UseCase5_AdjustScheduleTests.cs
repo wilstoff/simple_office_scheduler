@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using NodaTime;
 using SimpleOfficeScheduler.Models;
 
 namespace SimpleOfficeScheduler.Tests;
@@ -19,10 +20,10 @@ public class UseCase5_AdjustScheduleTests : IntegrationTestBase
             StartTime = evt.StartTime,
             EndTime = evt.EndTime,
             Capacity = evt.Capacity
-        });
+        }, JsonOptions);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
-        var updated = await response.Content.ReadFromJsonAsync<EventResponse>();
+        var updated = await response.Content.ReadFromJsonAsync<EventResponse>(JsonOptions);
         Assert.Equal("Updated Title", updated!.Title);
         Assert.Equal("Updated Desc", updated.Description);
     }
@@ -31,21 +32,20 @@ public class UseCase5_AdjustScheduleTests : IntegrationTestBase
     public async Task OwnerUpdatesTime_OccurrencesRegenerated()
     {
         await LoginAsync();
-        var start = DateTime.UtcNow.AddDays(2);
-        var evt = await CreateEventAsync("Time Change", startTime: start, endTime: start.AddHours(1));
-        var originalOccurrenceTime = evt.Occurrences.First().StartTime;
+        var start = LocalDateTime.FromDateTime(DateTime.Now.Date.AddDays(2).AddHours(9));
+        var evt = await CreateEventAsync("Time Change", startTime: start, endTime: start.PlusHours(1));
 
-        var newStart = DateTime.UtcNow.AddDays(3);
+        var newStart = LocalDateTime.FromDateTime(DateTime.Now.Date.AddDays(3).AddHours(10));
         var response = await Client.PutAsJsonAsync($"/api/events/{evt.Id}", new UpdateEventRequest
         {
             Title = "Time Change",
             StartTime = newStart,
-            EndTime = newStart.AddHours(2),
+            EndTime = newStart.PlusHours(2),
             Capacity = evt.Capacity
-        });
+        }, JsonOptions);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
-        var updated = await Client.GetFromJsonAsync<EventResponse>($"/api/events/{evt.Id}");
+        var updated = await Client.GetFromJsonAsync<EventResponse>($"/api/events/{evt.Id}", JsonOptions);
         Assert.NotNull(updated);
         // At least verify the event was updated successfully
         Assert.Equal("Time Change", updated.Title);
@@ -55,14 +55,14 @@ public class UseCase5_AdjustScheduleTests : IntegrationTestBase
     public async Task OwnerUpdatesRecurrence_OccurrencesRegenerated()
     {
         await LoginAsync();
-        var start = DateTime.UtcNow.AddDays(1);
+        var start = LocalDateTime.FromDateTime(DateTime.Now.Date.AddDays(1).AddHours(9));
         var evt = await CreateEventAsync("Recurrence Change",
             startTime: start,
-            endTime: start.AddHours(1),
+            endTime: start.PlusHours(1),
             recurrence: new RecurrencePatternDto
             {
                 Type = RecurrenceType.Weekly,
-                DaysOfWeek = new List<DayOfWeek> { start.DayOfWeek },
+                DaysOfWeek = new List<DayOfWeek> { start.DayOfWeek.ToDayOfWeek() },
                 Interval = 1,
                 MaxOccurrences = 4
             });
@@ -74,7 +74,7 @@ public class UseCase5_AdjustScheduleTests : IntegrationTestBase
         {
             Title = "Recurrence Change",
             StartTime = start,
-            EndTime = start.AddHours(1),
+            EndTime = start.PlusHours(1),
             Capacity = evt.Capacity,
             Recurrence = new RecurrencePatternDto
             {
@@ -82,10 +82,10 @@ public class UseCase5_AdjustScheduleTests : IntegrationTestBase
                 Interval = 1,
                 MaxOccurrences = 10
             }
-        });
+        }, JsonOptions);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
-        var updated = await Client.GetFromJsonAsync<EventResponse>($"/api/events/{evt.Id}");
+        var updated = await Client.GetFromJsonAsync<EventResponse>($"/api/events/{evt.Id}", JsonOptions);
         Assert.NotNull(updated);
         // Daily with 10 occurrences should have more than weekly with 4
         Assert.True(updated.Occurrences.Count >= originalCount,
@@ -107,7 +107,7 @@ public class UseCase5_AdjustScheduleTests : IntegrationTestBase
             StartTime = evt.StartTime,
             EndTime = evt.EndTime,
             Capacity = evt.Capacity
-        });
+        }, JsonOptions);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
@@ -132,10 +132,10 @@ public class UseCase5_AdjustScheduleTests : IntegrationTestBase
             StartTime = evt.StartTime,
             EndTime = evt.EndTime,
             Capacity = evt.Capacity
-        });
+        }, JsonOptions);
         Assert.Equal(HttpStatusCode.OK, editResponse.StatusCode);
 
-        var updated = await editResponse.Content.ReadFromJsonAsync<EventResponse>();
+        var updated = await editResponse.Content.ReadFromJsonAsync<EventResponse>(JsonOptions);
         Assert.Equal("New Owner Title", updated!.Title);
     }
 
@@ -155,7 +155,7 @@ public class UseCase5_AdjustScheduleTests : IntegrationTestBase
             StartTime = evt.StartTime,
             EndTime = evt.EndTime,
             Capacity = evt.Capacity
-        });
+        }, JsonOptions);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 }

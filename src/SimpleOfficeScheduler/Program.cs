@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.EntityFrameworkCore;
+using NodaTime;
+using NodaTime.Serialization.SystemTextJson;
 using SimpleOfficeScheduler.Auth;
 using SimpleOfficeScheduler.Components;
 using SimpleOfficeScheduler.Data;
@@ -16,6 +18,10 @@ builder.Services.Configure<ActiveDirectorySettings>(builder.Configuration.GetSec
 builder.Services.Configure<GraphApiSettings>(builder.Configuration.GetSection("GraphApi"));
 builder.Services.Configure<SeedUserSettings>(builder.Configuration.GetSection("SeedUser"));
 builder.Services.Configure<RecurrenceSettings>(builder.Configuration.GetSection("Recurrence"));
+builder.Services.Configure<TimezoneSettings>(builder.Configuration.GetSection("Timezone"));
+
+// NodaTime
+builder.Services.AddSingleton<IClock>(SystemClock.Instance);
 
 // Database
 builder.Services.AddDbContext<AppDbContext>(options =>
@@ -65,7 +71,12 @@ builder.Services.AddHostedService<RecurrenceExpansionBackgroundService>();
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
-builder.Services.AddControllers();
+// Controllers with NodaTime JSON serialization
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.ConfigureForNodaTime(DateTimeZoneProviders.Tzdb);
+    });
 
 var app = builder.Build();
 

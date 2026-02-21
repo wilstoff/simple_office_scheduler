@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using NodaTime;
 using SimpleOfficeScheduler.Data;
 using SimpleOfficeScheduler.Models;
 
@@ -43,8 +44,9 @@ public class RecurrenceExpansionBackgroundService : BackgroundService
         using var scope = _serviceProvider.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var expander = scope.ServiceProvider.GetRequiredService<RecurrenceExpander>();
+        var clock = scope.ServiceProvider.GetRequiredService<IClock>();
 
-        var horizon = DateTime.Now.AddMonths(_settings.DefaultHorizonMonths);
+        var now = clock.GetCurrentInstant();
 
         var recurringEvents = await db.Events
             .Include(e => e.Occurrences)
@@ -55,6 +57,10 @@ public class RecurrenceExpansionBackgroundService : BackgroundService
 
         foreach (var evt in recurringEvents)
         {
+            var zone = TimeZoneHelper.GetZone(evt.TimeZoneId);
+            var nowInTz = now.InZone(zone).LocalDateTime;
+            var horizon = nowInTz.PlusMonths(_settings.DefaultHorizonMonths);
+
             var existingTimes = evt.Occurrences.Select(o => o.StartTime).ToHashSet();
             var dates = expander.Expand(evt, horizon);
 

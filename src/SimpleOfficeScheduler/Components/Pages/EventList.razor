@@ -1,6 +1,9 @@
 @page "/events"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using NodaTime
+@using SimpleOfficeScheduler.Services
 @inject IEventService EventService
+@inject IClock Clock
 @rendermode InteractiveServer
 
 <PageTitle>Events - Office Scheduler</PageTitle>
@@ -45,8 +48,10 @@ else
             <tbody>
                 @foreach (var evt in _events)
                 {
+                    var zone = TimeZoneHelper.GetZone(evt.TimeZoneId);
+                    var nowInTz = Clock.GetCurrentInstant().InZone(zone).LocalDateTime;
                     var nextOccurrence = evt.Occurrences?
-                        .Where(o => !o.IsCancelled && o.StartTime > DateTime.UtcNow)
+                        .Where(o => !o.IsCancelled && o.StartTime.CompareTo(nowInTz) > 0)
                         .OrderBy(o => o.StartTime)
                         .FirstOrDefault();
 
@@ -56,7 +61,7 @@ else
                         <td>
                             @if (nextOccurrence is not null)
                             {
-                                @nextOccurrence.StartTime.ToLocalTime().ToString("MMM dd, yyyy h:mm tt")
+                                @nextOccurrence.StartTime.ToDateTimeUnspecified().ToString("MMM dd, yyyy h:mm tt")
                             }
                             else
                             {

@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using NodaTime;
 using SimpleOfficeScheduler.Models;
 
 namespace SimpleOfficeScheduler.Tests;
@@ -17,7 +18,7 @@ public class UseCase4_CancelInstanceTests : IntegrationTestBase
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         // Verify cancelled
-        var updated = await Client.GetFromJsonAsync<EventResponse>($"/api/events/{evt.Id}");
+        var updated = await Client.GetFromJsonAsync<EventResponse>($"/api/events/{evt.Id}", JsonOptions);
         Assert.True(updated!.Occurrences.First().IsCancelled);
     }
 
@@ -43,8 +44,8 @@ public class UseCase4_CancelInstanceTests : IntegrationTestBase
     public async Task CancelledOccurrence_ShowsInCalendarFeed()
     {
         await LoginAsync();
-        var start = DateTime.UtcNow.AddDays(1);
-        var evt = await CreateEventAsync("Visible Cancelled", startTime: start, endTime: start.AddHours(1));
+        var start = LocalDateTime.FromDateTime(DateTime.Now.Date.AddDays(1).AddHours(9));
+        var evt = await CreateEventAsync("Visible Cancelled", startTime: start, endTime: start.PlusHours(1));
         var occurrenceId = evt.Occurrences.First().Id;
 
         await Client.PostAsync($"/api/events/occurrences/{occurrenceId}/cancel", null);

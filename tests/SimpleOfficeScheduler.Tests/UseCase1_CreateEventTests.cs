@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using NodaTime;
 using SimpleOfficeScheduler.Models;
 
 namespace SimpleOfficeScheduler.Tests;
@@ -11,8 +12,8 @@ public class UseCase1_CreateEventTests : IntegrationTestBase
     {
         await LoginAsync();
 
-        var start = DateTime.UtcNow.AddDays(1);
-        var end = start.AddHours(1);
+        var start = LocalDateTime.FromDateTime(DateTime.Now.Date.AddDays(1).AddHours(9));
+        var end = start.PlusHours(1);
 
         var evt = await CreateEventAsync("Office Hours", "Weekly meeting", start, end, capacity: 3);
 
@@ -28,8 +29,8 @@ public class UseCase1_CreateEventTests : IntegrationTestBase
     {
         await LoginAsync();
 
-        var start = DateTime.UtcNow.AddDays(1);
-        var end = start.AddHours(1);
+        var start = LocalDateTime.FromDateTime(DateTime.Now.Date.AddDays(1).AddHours(9));
+        var end = start.PlusHours(1);
 
         var evt = await CreateEventAsync(
             "Weekly Standup",
@@ -39,7 +40,7 @@ public class UseCase1_CreateEventTests : IntegrationTestBase
             recurrence: new RecurrencePatternDto
             {
                 Type = RecurrenceType.Weekly,
-                DaysOfWeek = new List<DayOfWeek> { start.DayOfWeek },
+                DaysOfWeek = new List<DayOfWeek> { start.DayOfWeek.ToDayOfWeek() },
                 Interval = 1,
                 MaxOccurrences = 5
             });
@@ -74,16 +75,37 @@ public class UseCase1_CreateEventTests : IntegrationTestBase
     [Fact]
     public async Task CreateEvent_WithoutLogin_ReturnsUnauthorized()
     {
+        var start = new LocalDateTime(2026, 7, 1, 9, 0, 0);
+        var end = start.PlusHours(1);
+
         var response = await Client.PostAsJsonAsync("/api/events", new CreateEventRequest
         {
             Title = "Should Fail",
-            StartTime = DateTime.UtcNow.AddDays(1),
-            EndTime = DateTime.UtcNow.AddDays(1).AddHours(1),
+            StartTime = start,
+            EndTime = end,
             Capacity = 1
-        });
+        }, JsonOptions);
 
         Assert.True(
             response.StatusCode == HttpStatusCode.Unauthorized ||
             response.StatusCode == HttpStatusCode.Redirect);
     }
+}
+
+/// <summary>
+/// Extension to convert NodaTime IsoDayOfWeek to System.DayOfWeek in tests.
+/// </summary>
+internal static class TestIsoDayOfWeekExtensions
+{
+    public static DayOfWeek ToDayOfWeek(this IsoDayOfWeek isoDow) => isoDow switch
+    {
+        IsoDayOfWeek.Monday => DayOfWeek.Monday,
+        IsoDayOfWeek.Tuesday => DayOfWeek.Tuesday,
+        IsoDayOfWeek.Wednesday => DayOfWeek.Wednesday,
+        IsoDayOfWeek.Thursday => DayOfWeek.Thursday,
+        IsoDayOfWeek.Friday => DayOfWeek.Friday,
+        IsoDayOfWeek.Saturday => DayOfWeek.Saturday,
+        IsoDayOfWeek.Sunday => DayOfWeek.Sunday,
+        _ => throw new ArgumentOutOfRangeException(nameof(isoDow))
+    };
 }

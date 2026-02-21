@@ -1,7 +1,9 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using NodaTime;
 using SimpleOfficeScheduler.Models;
+using SimpleOfficeScheduler.Services;
 using SimpleOfficeScheduler.Services.Events;
 
 namespace SimpleOfficeScheduler.Controllers;
@@ -23,24 +25,37 @@ public class EventsApiController : ControllerBase
     [HttpGet("calendar")]
     public async Task<IActionResult> GetCalendarFeed([FromQuery] DateTime start, [FromQuery] DateTime end)
     {
-        var occurrences = await _eventService.GetOccurrencesInRangeAsync(start, end);
+        // FullCalendar sends UTC range params — convert to LocalDateTime for the query
+        // Pad by ±14 hours to cover all possible timezone offsets
+        var rangeStart = LocalDateTime.FromDateTime(start).PlusHours(-14);
+        var rangeEnd = LocalDateTime.FromDateTime(end).PlusHours(14);
 
-        var result = occurrences.Select(o => new
+        var occurrences = await _eventService.GetOccurrencesInRangeAsync(rangeStart, rangeEnd);
+
+        var result = occurrences.Select(o =>
         {
-            id = o.Id.ToString(),
-            title = o.Event.Title,
-            start = o.StartTime.ToString("o"),
-            end = o.EndTime.ToString("o"),
-            color = o.IsCancelled ? "#ccc" : (o.Signups.Count >= o.Event.Capacity ? "#ffc107" : "#0d6efd"),
-            url = $"/events/{o.EventId}",
-            extendedProps = new
+            // Convert wall-clock time to UTC for FullCalendar
+            var startUtc = TimeZoneHelper.WallClockToUtc(o.StartTime.ToDateTimeUnspecified(), o.Event.TimeZoneId);
+            var endUtc = TimeZoneHelper.WallClockToUtc(o.EndTime.ToDateTimeUnspecified(), o.Event.TimeZoneId);
+
+            return new
             {
-                capacity = o.Event.Capacity,
-                signedUp = o.Signups.Count,
-                isCancelled = o.IsCancelled,
-                eventId = o.EventId,
-                owner = o.Event.Owner.DisplayName
-            }
+                id = o.Id.ToString(),
+                title = o.Event.Title,
+                start = startUtc.ToString("yyyy-MM-ddTHH:mm:ssZ"),
+                end = endUtc.ToString("yyyy-MM-ddTHH:mm:ssZ"),
+                color = o.IsCancelled ? "#ccc" : (o.Signups.Count >= o.Event.Capacity ? "#ffc107" : "#0d6efd"),
+                url = $"/events/{o.EventId}",
+                extendedProps = new
+                {
+                    capacity = o.Event.Capacity,
+                    signedUp = o.Signups.Count,
+                    isCancelled = o.IsCancelled,
+                    eventId = o.EventId,
+                    owner = o.Event.Owner.DisplayName,
+                    timeZoneId = o.Event.TimeZoneId
+                }
+            };
         });
 
         return Ok(result);
@@ -74,6 +89,7 @@ public class EventsApiController : ControllerBase
             StartTime = request.StartTime,
             EndTime = request.EndTime,
             Capacity = request.Capacity,
+            TimeZoneId = request.TimeZoneId ?? TimeZoneHelper.GetLocalTimeZoneId(),
             Recurrence = request.Recurrence is not null ? new RecurrencePattern
             {
                 Type = request.Recurrence.Type,
@@ -101,6 +117,7 @@ public class EventsApiController : ControllerBase
             StartTime = request.StartTime,
             EndTime = request.EndTime,
             Capacity = request.Capacity,
+            TimeZoneId = request.TimeZoneId ?? TimeZoneHelper.GetLocalTimeZoneId(),
             Recurrence = request.Recurrence is not null ? new RecurrencePattern
             {
                 Type = request.Recurrence.Type,
@@ -164,6 +181,7 @@ public class EventsApiController : ControllerBase
         StartTime = evt.StartTime,
         EndTime = evt.EndTime,
         Capacity = evt.Capacity,
+        TimeZoneId = evt.TimeZoneId,
         Recurrence = evt.Recurrence is not null ? new RecurrencePatternDto
         {
             Type = evt.Recurrence.Type,
@@ -172,20 +190,30 @@ public class EventsApiController : ControllerBase
             RecurrenceEndDate = evt.Recurrence.RecurrenceEndDate,
             MaxOccurrences = evt.Recurrence.MaxOccurrences
         } : null,
-        Occurrences = evt.Occurrences?.Select(o => new OccurrenceResponse
+        Occurrences = evt.Occurrences?.Select(o =>
         {
-            Id = o.Id,
-            EventId = o.EventId,
-            StartTime = o.StartTime,
-            EndTime = o.EndTime,
-            IsCancelled = o.IsCancelled,
-            SignupCount = o.Signups?.Count ?? 0,
-            Signups = o.Signups?.Select(s => new SignupResponse
+            var zone = TimeZoneHelper.GetZone(evt.TimeZoneId);
+            var startUtc = o.StartTime.InZoneLeniently(zone).ToInstant();
+            var endUtc = o.EndTime.InZoneLeniently(zone).ToInstant();
+
+            return new OccurrenceResponse
             {
-                UserId = s.UserId,
-                DisplayName = s.User?.DisplayName ?? "",
-                SignedUpAt = s.SignedUpAt
-            }).ToList() ?? new()
+                Id = o.Id,
+                EventId = o.EventId,
+                StartTime = o.StartTime,
+                EndTime = o.EndTime,
+                StartTimeUtc = startUtc,
+                EndTimeUtc = endUtc,
+                TimeZoneId = evt.TimeZoneId,
+                IsCancelled = o.IsCancelled,
+                SignupCount = o.Signups?.Count ?? 0,
+                Signups = o.Signups?.Select(s => new SignupResponse
+                {
+                    UserId = s.UserId,
+                    DisplayName = s.User?.DisplayName ?? "",
+                    SignedUpAt = s.SignedUpAt
+                }).ToList() ?? new()
+            };
         }).OrderBy(o => o.StartTime).ToList() ?? new()
     };
 }

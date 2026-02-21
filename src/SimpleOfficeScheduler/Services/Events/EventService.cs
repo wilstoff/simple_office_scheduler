@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using NodaTime;
 using SimpleOfficeScheduler.Data;
 using SimpleOfficeScheduler.Models;
 using SimpleOfficeScheduler.Services.Calendar;
@@ -13,6 +14,7 @@ public class EventService : IEventService
     private readonly RecurrenceExpander _expander;
     private readonly ICalendarInviteService _calendarService;
     private readonly RecurrenceSettings _recurrenceSettings;
+    private readonly IClock _clock;
     private readonly ILogger<EventService> _logger;
 
     public EventService(
@@ -20,27 +22,41 @@ public class EventService : IEventService
         RecurrenceExpander expander,
         ICalendarInviteService calendarService,
         IOptions<RecurrenceSettings> recurrenceSettings,
+        IClock clock,
         ILogger<EventService> logger)
     {
         _db = db;
         _expander = expander;
         _calendarService = calendarService;
         _recurrenceSettings = recurrenceSettings.Value;
+        _clock = clock;
         _logger = logger;
+    }
+
+    private Instant Now => _clock.GetCurrentInstant();
+
+    private LocalDateTime NowInEventTimeZone(Event evt)
+    {
+        var zone = TimeZoneHelper.GetZone(evt.TimeZoneId);
+        return Now.InZone(zone).LocalDateTime;
     }
 
     public async Task<Event> CreateEventAsync(Event evt, int ownerUserId)
     {
         evt.OwnerUserId = ownerUserId;
-        evt.DurationMinutes = (int)(evt.EndTime - evt.StartTime).TotalMinutes;
-        evt.CreatedAt = DateTime.UtcNow;
-        evt.UpdatedAt = DateTime.UtcNow;
+        evt.DurationMinutes = (int)Period.Between(evt.StartTime, evt.EndTime).ToDuration().TotalMinutes;
+        evt.CreatedAt = Now;
+        evt.UpdatedAt = Now;
+
+        // Resolve timezone ID (validate or fall back to default)
+        evt.TimeZoneId = TimeZoneHelper.ResolveTimeZoneId(evt.TimeZoneId);
 
         _db.Events.Add(evt);
         await _db.SaveChangesAsync();
 
         // Generate occurrences
-        var horizon = DateTime.Now.AddMonths(_recurrenceSettings.DefaultHorizonMonths);
+        var nowInTz = NowInEventTimeZone(evt);
+        var horizon = nowInTz.PlusMonths(_recurrenceSettings.DefaultHorizonMonths);
         var dates = _expander.Expand(evt, horizon);
 
         foreach (var (start, end) in dates)
@@ -86,7 +102,7 @@ public class EventService : IEventService
         return await query.OrderBy(e => e.StartTime).ToListAsync();
     }
 
-    public async Task<List<EventOccurrence>> GetOccurrencesInRangeAsync(DateTime start, DateTime end)
+    public async Task<List<EventOccurrence>> GetOccurrencesInRangeAsync(LocalDateTime start, LocalDateTime end)
     {
         return await _db.EventOccurrences
             .Include(o => o.Event)
@@ -135,7 +151,7 @@ public class EventService : IEventService
         {
             EventOccurrenceId = occurrenceId,
             UserId = userId,
-            SignedUpAt = DateTime.UtcNow
+            SignedUpAt = Now
         };
 
         _db.EventSignups.Add(signup);
@@ -227,14 +243,17 @@ public class EventService : IEventService
         existing.Description = updatedEvent.Description;
         existing.StartTime = updatedEvent.StartTime;
         existing.EndTime = updatedEvent.EndTime;
-        existing.DurationMinutes = (int)(updatedEvent.EndTime - updatedEvent.StartTime).TotalMinutes;
+        existing.DurationMinutes = (int)Period.Between(updatedEvent.StartTime, updatedEvent.EndTime).ToDuration().TotalMinutes;
         existing.Capacity = updatedEvent.Capacity;
+        existing.TimeZoneId = TimeZoneHelper.ResolveTimeZoneId(updatedEvent.TimeZoneId);
         existing.Recurrence = updatedEvent.Recurrence;
-        existing.UpdatedAt = DateTime.UtcNow;
+        existing.UpdatedAt = Now;
+
+        var nowInTz = NowInEventTimeZone(existing);
 
         // Remove future occurrences without signups and regenerate
         var futureOccurrencesWithoutSignups = existing.Occurrences
-            .Where(o => o.StartTime > DateTime.Now && !o.Signups.Any())
+            .Where(o => o.StartTime.CompareTo(nowInTz) > 0 && !o.Signups.Any())
             .ToList();
 
         foreach (var occ in futureOccurrencesWithoutSignups)
@@ -243,7 +262,7 @@ public class EventService : IEventService
         }
 
         // Regenerate occurrences
-        var horizon = DateTime.Now.AddMonths(_recurrenceSettings.DefaultHorizonMonths);
+        var horizon = nowInTz.PlusMonths(_recurrenceSettings.DefaultHorizonMonths);
         var dates = _expander.Expand(existing, horizon);
 
         // Only add occurrences that don't already exist
@@ -254,7 +273,7 @@ public class EventService : IEventService
 
         foreach (var (start, end) in dates)
         {
-            if (!existingStartTimes.Contains(start) && start > DateTime.Now)
+            if (!existingStartTimes.Contains(start) && start.CompareTo(nowInTz) > 0)
             {
                 _db.EventOccurrences.Add(new EventOccurrence
                 {
@@ -283,7 +302,7 @@ public class EventService : IEventService
             return (false, "New owner not found.");
 
         evt.OwnerUserId = newOwnerId;
-        evt.UpdatedAt = DateTime.UtcNow;
+        evt.UpdatedAt = Now;
         await _db.SaveChangesAsync();
 
         return (true, null);

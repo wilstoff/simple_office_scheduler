@@ -42,6 +42,7 @@ namespace SimpleOfficeScheduler.Migrations
                     EndTime = table.Column<DateTime>(type: "TEXT", nullable: false),
                     DurationMinutes = table.Column<int>(type: "INTEGER", nullable: false),
                     Capacity = table.Column<int>(type: "INTEGER", nullable: false),
+                    TimeZoneId = table.Column<string>(type: "TEXT", maxLength: 100, nullable: false, defaultValue: "America/New_York"),
                     Recurrence_Type = table.Column<int>(type: "INTEGER", nullable: true),
                     Recurrence_DaysOfWeek = table.Column<string>(type: "TEXT", nullable: true),
                     Recurrence_Interval = table.Column<int>(type: "INTEGER", nullable: true),

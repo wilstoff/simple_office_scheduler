@@ -1,3 +1,5 @@
+using NodaTime;
+
 namespace SimpleOfficeScheduler.Models;
 
 public class EventOccurrence
@@ -6,8 +8,8 @@ public class EventOccurrence
     public int EventId { get; set; }
     public Event Event { get; set; } = null!;
 
-    public DateTime StartTime { get; set; }
-    public DateTime EndTime { get; set; }
+    public LocalDateTime StartTime { get; set; }
+    public LocalDateTime EndTime { get; set; }
     public bool IsCancelled { get; set; }
     public string? GraphEventId { get; set; }
 

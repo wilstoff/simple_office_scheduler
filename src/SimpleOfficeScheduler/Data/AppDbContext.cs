@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+using NodaTime;
 using SimpleOfficeScheduler.Models;
 
 namespace SimpleOfficeScheduler.Data;
@@ -11,6 +13,21 @@ public class AppDbContext : DbContext
     public DbSet<Event> Events => Set<Event>();
     public DbSet<EventOccurrence> EventOccurrences => Set<EventOccurrence>();
     public DbSet<EventSignup> EventSignups => Set<EventSignup>();
+
+    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
+    {
+        base.ConfigureConventions(configurationBuilder);
+
+        // NodaTime value converters for SQLite (stores as TEXT ISO strings)
+        configurationBuilder.Properties<LocalDateTime>()
+            .HaveConversion<LocalDateTimeConverter>();
+
+        configurationBuilder.Properties<Instant>()
+            .HaveConversion<InstantConverter>();
+
+        configurationBuilder.Properties<LocalDate>()
+            .HaveConversion<LocalDateConverter>();
+    }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -34,6 +51,7 @@ public class AppDbContext : DbContext
                 .OnDelete(DeleteBehavior.Restrict);
 
             entity.Property(e => e.Title).HasMaxLength(256);
+            entity.Property(e => e.TimeZoneId).HasMaxLength(100);
 
             // RecurrencePattern as owned entity
             entity.OwnsOne(e => e.Recurrence, recurrence =>
@@ -80,5 +98,41 @@ public class AppDbContext : DbContext
 
             entity.HasIndex(e => new { e.EventOccurrenceId, e.UserId }).IsUnique();
         });
+    }
+
+    /// <summary>
+    /// Converts NodaTime LocalDateTime to/from DateTime for SQLite storage.
+    /// </summary>
+    private class LocalDateTimeConverter : ValueConverter<LocalDateTime, DateTime>
+    {
+        public LocalDateTimeConverter()
+            : base(
+                v => v.ToDateTimeUnspecified(),
+                v => LocalDateTime.FromDateTime(v))
+        { }
+    }
+
+    /// <summary>
+    /// Converts NodaTime Instant to/from DateTime (UTC) for SQLite storage.
+    /// </summary>
+    private class InstantConverter : ValueConverter<Instant, DateTime>
+    {
+        public InstantConverter()
+            : base(
+                v => v.ToDateTimeUtc(),
+                v => Instant.FromDateTimeUtc(DateTime.SpecifyKind(v, DateTimeKind.Utc)))
+        { }
+    }
+
+    /// <summary>
+    /// Converts NodaTime LocalDate to/from DateTime for SQLite storage.
+    /// </summary>
+    private class LocalDateConverter : ValueConverter<LocalDate, DateTime>
+    {
+        public LocalDateConverter()
+            : base(
+                v => v.ToDateTimeUnspecified(),
+                v => LocalDate.FromDateTime(v))
+        { }
     }
 }

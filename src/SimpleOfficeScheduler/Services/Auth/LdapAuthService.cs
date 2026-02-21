@@ -82,7 +82,7 @@ public class LdapAuthService : IAuthenticationService
                     DisplayName = displayName,
                     Email = email,
                     IsLocalAccount = false,
-                    CreatedAt = DateTime.UtcNow
+                    CreatedAt = NodaTime.SystemClock.Instance.GetCurrentInstant()
                 };
                 _db.Users.Add(user);
             }

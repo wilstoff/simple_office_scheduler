@@ -1,3 +1,5 @@
+using NodaTime;
+
 namespace SimpleOfficeScheduler.Models;
 
 public class AppUser
@@ -8,7 +10,7 @@ public class AppUser
     public string Email { get; set; } = string.Empty;
     public string? PasswordHash { get; set; }
     public bool IsLocalAccount { get; set; }
-    public DateTime CreatedAt { get; set; }
+    public Instant CreatedAt { get; set; }
 
     public ICollection<Event> OwnedEvents { get; set; } = new List<Event>();
     public ICollection<EventSignup> Signups { get; set; } = new List<EventSignup>();

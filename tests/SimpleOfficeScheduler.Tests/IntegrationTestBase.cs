@@ -1,8 +1,11 @@
 using System.Net.Http.Json;
+using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using NodaTime;
+using NodaTime.Serialization.SystemTextJson;
 using SimpleOfficeScheduler.Data;
 using SimpleOfficeScheduler.Models;
 
@@ -16,6 +19,12 @@ public class IntegrationTestBase : IAsyncLifetime
 
     protected const string TestUsername = "testadmin";
     protected const string TestPassword = "Test123!";
+
+    /// <summary>
+    /// JsonSerializerOptions configured for NodaTime, matching the server config.
+    /// </summary>
+    protected static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web)
+        .ConfigureForNodaTime(DateTimeZoneProviders.Tzdb);
 
     public IntegrationTestBase()
     {
@@ -69,7 +78,7 @@ public class IntegrationTestBase : IAsyncLifetime
                 Email = "testadmin@test.local",
                 PasswordHash = BCrypt.Net.BCrypt.HashPassword(TestPassword),
                 IsLocalAccount = true,
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = SystemClock.Instance.GetCurrentInstant()
             });
             await db.SaveChangesAsync();
         }
@@ -99,25 +108,29 @@ public class IntegrationTestBase : IAsyncLifetime
     protected async Task<EventResponse> CreateEventAsync(
         string title = "Test Event",
         string? description = null,
-        DateTime? startTime = null,
-        DateTime? endTime = null,
+        LocalDateTime? startTime = null,
+        LocalDateTime? endTime = null,
         int capacity = 5,
+        string? timeZoneId = null,
         RecurrencePatternDto? recurrence = null)
     {
-        var start = startTime ?? DateTime.UtcNow.AddDays(1);
-        var end = endTime ?? start.AddHours(1);
+        var start = startTime ?? LocalDateTime.FromDateTime(DateTime.Now.Date.AddDays(1).AddHours(9));
+        var end = endTime ?? start.PlusHours(1);
 
-        var response = await Client.PostAsJsonAsync("/api/events", new CreateEventRequest
+        var request = new CreateEventRequest
         {
             Title = title,
             Description = description,
             StartTime = start,
             EndTime = end,
             Capacity = capacity,
+            TimeZoneId = timeZoneId,
             Recurrence = recurrence
-        });
+        };
+
+        var response = await Client.PostAsJsonAsync("/api/events", request, JsonOptions);
         response.EnsureSuccessStatusCode();
-        return (await response.Content.ReadFromJsonAsync<EventResponse>())!;
+        return (await response.Content.ReadFromJsonAsync<EventResponse>(JsonOptions))!;
     }
 
     protected async Task<AppUser> CreateSecondUserAsync(string username = "user2")
@@ -135,7 +148,7 @@ public class IntegrationTestBase : IAsyncLifetime
             Email = $"{username}@test.local",
             PasswordHash = BCrypt.Net.BCrypt.HashPassword("Password1!"),
             IsLocalAccount = true,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = SystemClock.Instance.GetCurrentInstant()
         };
         db.Users.Add(user);
         await db.SaveChangesAsync();
@@ -144,7 +157,6 @@ public class IntegrationTestBase : IAsyncLifetime
 
     protected async Task LoginAsAsync(string username, string password = "Password1!")
     {
-        // Need a fresh handler to reset cookies
         var response = await Client.PostAsJsonAsync("/api/auth/login", new
         {
             username,

@@ -34,13 +34,13 @@ public class GraphCalendarService : ICalendarInviteService
             },
             Start = new DateTimeTimeZone
             {
-                DateTime = occurrence.StartTime.ToString("yyyy-MM-ddTHH:mm:ss"),
-                TimeZone = "UTC"
+                DateTime = occurrence.StartTime.ToDateTimeUnspecified().ToString("yyyy-MM-ddTHH:mm:ss"),
+                TimeZone = occurrence.Event.TimeZoneId
             },
             End = new DateTimeTimeZone
             {
-                DateTime = occurrence.EndTime.ToString("yyyy-MM-ddTHH:mm:ss"),
-                TimeZone = "UTC"
+                DateTime = occurrence.EndTime.ToDateTimeUnspecified().ToString("yyyy-MM-ddTHH:mm:ss"),
+                TimeZone = occurrence.Event.TimeZoneId
             },
             IsOnlineMeeting = true,
             OnlineMeetingProvider = OnlineMeetingProviderType.TeamsForBusiness,

@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using NodaTime;
 using SimpleOfficeScheduler.Models;
 
 namespace SimpleOfficeScheduler.Tests;
@@ -12,7 +13,7 @@ public class UseCase2_ViewEventsTests : IntegrationTestBase
         await CreateEventAsync("Team Sync");
         await CreateEventAsync("Code Review");
 
-        var results = await Client.GetFromJsonAsync<List<EventResponse>>("/api/events/search?q=Team");
+        var results = await Client.GetFromJsonAsync<List<EventResponse>>("/api/events/search?q=Team", JsonOptions);
 
         Assert.NotNull(results);
         Assert.Single(results);
@@ -26,7 +27,7 @@ public class UseCase2_ViewEventsTests : IntegrationTestBase
         await CreateEventAsync("Meeting A", description: "Discuss budget planning");
         await CreateEventAsync("Meeting B", description: "Technical review");
 
-        var results = await Client.GetFromJsonAsync<List<EventResponse>>("/api/events/search?q=budget");
+        var results = await Client.GetFromJsonAsync<List<EventResponse>>("/api/events/search?q=budget", JsonOptions);
 
         Assert.NotNull(results);
         Assert.Single(results);
@@ -39,7 +40,7 @@ public class UseCase2_ViewEventsTests : IntegrationTestBase
         await LoginAsync();
         await CreateEventAsync("Something");
 
-        var results = await Client.GetFromJsonAsync<List<EventResponse>>("/api/events/search?q=nonexistent");
+        var results = await Client.GetFromJsonAsync<List<EventResponse>>("/api/events/search?q=nonexistent", JsonOptions);
 
         Assert.NotNull(results);
         Assert.Empty(results);
@@ -52,7 +53,7 @@ public class UseCase2_ViewEventsTests : IntegrationTestBase
         await CreateEventAsync("Event 1");
         await CreateEventAsync("Event 2");
 
-        var results = await Client.GetFromJsonAsync<List<EventResponse>>("/api/events/search");
+        var results = await Client.GetFromJsonAsync<List<EventResponse>>("/api/events/search", JsonOptions);
 
         Assert.NotNull(results);
         Assert.True(results.Count >= 2);
@@ -64,7 +65,7 @@ public class UseCase2_ViewEventsTests : IntegrationTestBase
         await LoginAsync();
         var created = await CreateEventAsync("Detail Test", description: "Desc");
 
-        var evt = await Client.GetFromJsonAsync<EventResponse>($"/api/events/{created.Id}");
+        var evt = await Client.GetFromJsonAsync<EventResponse>($"/api/events/{created.Id}", JsonOptions);
 
         Assert.NotNull(evt);
         Assert.Equal("Detail Test", evt.Title);
@@ -76,8 +77,8 @@ public class UseCase2_ViewEventsTests : IntegrationTestBase
     public async Task CalendarFeed_ReturnsOccurrencesInRange()
     {
         await LoginAsync();
-        var start = DateTime.UtcNow.AddDays(1);
-        await CreateEventAsync("Calendar Event", startTime: start, endTime: start.AddHours(1));
+        var start = LocalDateTime.FromDateTime(DateTime.Now.Date.AddDays(1).AddHours(9));
+        await CreateEventAsync("Calendar Event", startTime: start, endTime: start.PlusHours(1));
 
         var rangeStart = DateTime.UtcNow.ToString("o");
         var rangeEnd = DateTime.UtcNow.AddDays(7).ToString("o");
@@ -93,8 +94,8 @@ public class UseCase2_ViewEventsTests : IntegrationTestBase
     public async Task CalendarFeed_ExcludesOccurrencesOutsideRange()
     {
         await LoginAsync();
-        var farFuture = DateTime.UtcNow.AddDays(60);
-        await CreateEventAsync("Far Future Event", startTime: farFuture, endTime: farFuture.AddHours(1));
+        var farFuture = LocalDateTime.FromDateTime(DateTime.Now.Date.AddDays(60).AddHours(9));
+        await CreateEventAsync("Far Future Event", startTime: farFuture, endTime: farFuture.PlusHours(1));
 
         var rangeStart = DateTime.UtcNow.ToString("o");
         var rangeEnd = DateTime.UtcNow.AddDays(7).ToString("o");

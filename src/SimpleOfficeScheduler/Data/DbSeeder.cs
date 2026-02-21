@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using NodaTime;
 using SimpleOfficeScheduler.Models;
 
 namespace SimpleOfficeScheduler.Data;
@@ -8,12 +9,14 @@ public class DbSeeder
 {
     private readonly AppDbContext _db;
     private readonly SeedUserSettings _seedSettings;
+    private readonly IClock _clock;
     private readonly ILogger<DbSeeder> _logger;
 
-    public DbSeeder(AppDbContext db, IOptions<SeedUserSettings> seedSettings, ILogger<DbSeeder> logger)
+    public DbSeeder(AppDbContext db, IOptions<SeedUserSettings> seedSettings, IClock clock, ILogger<DbSeeder> logger)
     {
         _db = db;
         _seedSettings = seedSettings.Value;
+        _clock = clock;
         _logger = logger;
     }
 
@@ -37,7 +40,7 @@ public class DbSeeder
             Email = _seedSettings.Email,
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(_seedSettings.Password),
             IsLocalAccount = true,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = _clock.GetCurrentInstant()
         };
 
         _db.Users.Add(user);

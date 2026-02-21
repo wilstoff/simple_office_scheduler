@@ -1,3 +1,5 @@
+using NodaTime;
+
 namespace SimpleOfficeScheduler.Models;
 
 public class Event
@@ -8,15 +10,16 @@ public class Event
     public int OwnerUserId { get; set; }
     public AppUser Owner { get; set; } = null!;
 
-    public DateTime StartTime { get; set; }
-    public DateTime EndTime { get; set; }
+    public LocalDateTime StartTime { get; set; }
+    public LocalDateTime EndTime { get; set; }
     public int DurationMinutes { get; set; }
     public int Capacity { get; set; } = 1;
+    public string TimeZoneId { get; set; } = "America/New_York";
 
     public RecurrencePattern? Recurrence { get; set; }
 
-    public DateTime CreatedAt { get; set; }
-    public DateTime UpdatedAt { get; set; }
+    public Instant CreatedAt { get; set; }
+    public Instant UpdatedAt { get; set; }
 
     public ICollection<EventOccurrence> Occurrences { get; set; } = new List<EventOccurrence>();
 }

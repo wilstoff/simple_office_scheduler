@@ -1,8 +1,11 @@
 @page "/events/{EventId:int}"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using NodaTime
+@using SimpleOfficeScheduler.Services
 @inject IEventService EventService
 @inject AuthenticationStateProvider AuthStateProvider
 @inject NavigationManager Navigation
+@inject IClock Clock
 @rendermode InteractiveServer
 
 <PageTitle>Event Details - Office Scheduler</PageTitle>
@@ -49,6 +52,9 @@
             <span>One-time</span>
         }
     </div>
+    <div class="col-md-3">
+        <strong>Timezone:</strong> @_event.TimeZoneId
+    </div>
 </div>
 
 @if (_isOwner)
@@ -67,8 +73,10 @@
 <h4>Upcoming Occurrences</h4>
 
 @{
+    var zone = TimeZoneHelper.GetZone(_event.TimeZoneId);
+    var nowInTz = Clock.GetCurrentInstant().InZone(zone).LocalDateTime;
     var upcomingOccurrences = _event.Occurrences
-        .Where(o => o.StartTime > DateTime.UtcNow.AddHours(-1))
+        .Where(o => o.StartTime.CompareTo(nowInTz.PlusHours(-1)) > 0)
         .OrderBy(o => o.StartTime)
         .Take(20)
         .ToList();
@@ -96,11 +104,13 @@ else
                     var signupCount = occ.Signups.Count;
                     var isFull = signupCount >= _event.Capacity;
                     var isSignedUp = occ.Signups.Any(s => s.UserId == _currentUserId);
+                    var startDt = occ.StartTime.ToDateTimeUnspecified();
+                    var endDt = occ.EndTime.ToDateTimeUnspecified();
 
                     <tr class="@(occ.IsCancelled ? "table-secondary" : "")">
                         <td>
-                            @occ.StartTime.ToLocalTime().ToString("ddd, MMM dd yyyy h:mm tt")
-                            - @occ.EndTime.ToLocalTime().ToString("h:mm tt")
+                            @startDt.ToString("ddd, MMM dd yyyy h:mm tt")
+                            - @endDt.ToString("h:mm tt")
                         </td>
                         <td>
                             @if (occ.IsCancelled)

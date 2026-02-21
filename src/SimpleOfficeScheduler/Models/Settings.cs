@@ -31,3 +31,8 @@ public class RecurrenceSettings
     public int DefaultHorizonMonths { get; set; } = 6;
     public int ExpansionCheckIntervalHours { get; set; } = 24;
 }
+
+public class TimezoneSettings
+{
+    public string DefaultTimeZoneId { get; set; } = TimeZoneInfo.Local.Id;
+}

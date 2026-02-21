@@ -1,6 +1,8 @@
 @page "/events/create"
 @page "/events/{EventId:int}/edit"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using NodaTime
+@using SimpleOfficeScheduler.Services
 @inject IEventService EventService
 @inject AuthenticationStateProvider AuthStateProvider
 @inject NavigationManager Navigation
@@ -45,6 +47,16 @@
                     <label for="endTime" class="form-label">End Time</label>
                     <InputDate id="endTime" Type="InputDateType.DateTimeLocal" class="form-control" @bind-Value="_model.EndTime" />
                 </div>
+            </div>
+
+            <div class="mb-3">
+                <label for="timeZone" class="form-label">Time Zone</label>
+                <InputSelect id="timeZone" class="form-select" @bind-Value="_model.TimeZoneId">
+                    @foreach (var tz in _timeZones)
+                    {
+                        <option value="@tz.Id">@tz.DisplayName</option>
+                    }
+                </InputSelect>
             </div>
 
             <div class="mb-3">
@@ -138,9 +150,12 @@
     private string? _successMessage;
     private bool _isSubmitting;
     private bool _isEditMode => EventId.HasValue;
+    private List<(string Id, string DisplayName)> _timeZones = new();
 
     protected override async Task OnInitializedAsync()
     {
+        _timeZones = TimeZoneHelper.GetCommonTimeZones();
+
         if (_isEditMode)
         {
             var evt = await EventService.GetEventAsync(EventId!.Value);
@@ -154,20 +169,22 @@
             {
                 Title = evt.Title,
                 Description = evt.Description,
-                StartTime = evt.StartTime,
-                EndTime = evt.EndTime,
+                StartTime = evt.StartTime.ToDateTimeUnspecified(),
+                EndTime = evt.EndTime.ToDateTimeUnspecified(),
                 Capacity = evt.Capacity,
+                TimeZoneId = evt.TimeZoneId,
                 IsRecurring = evt.Recurrence is not null,
                 RecurrenceType = evt.Recurrence?.Type ?? RecurrenceType.Weekly,
                 Interval = evt.Recurrence?.Interval ?? 1,
                 DaysOfWeek = evt.Recurrence?.DaysOfWeek ?? new List<DayOfWeek>(),
-                RecurrenceEndDate = evt.Recurrence?.RecurrenceEndDate
+                RecurrenceEndDate = evt.Recurrence?.RecurrenceEndDate?.ToDateTimeUnspecified()
             };
         }
         else
         {
             _model.StartTime = DateTime.Now.Date.AddDays(1).AddHours(9);
             _model.EndTime = DateTime.Now.Date.AddDays(1).AddHours(10);
+            _model.TimeZoneId = TimeZoneHelper.GetLocalTimeZoneId();
         }
     }
 
@@ -198,9 +215,10 @@
         {
             Title = _model.Title,
             Description = _model.Description,
-            StartTime = _model.StartTime,
-            EndTime = _model.EndTime,
-            Capacity = _model.Capacity
+            StartTime = LocalDateTime.FromDateTime(_model.StartTime),
+            EndTime = LocalDateTime.FromDateTime(_model.EndTime),
+            Capacity = _model.Capacity,
+            TimeZoneId = _model.TimeZoneId
         };
 
         if (_model.IsRecurring)
@@ -210,7 +228,9 @@
                 Type = _model.RecurrenceType,
                 Interval = _model.Interval,
                 DaysOfWeek = _model.DaysOfWeek,
-                RecurrenceEndDate = _model.RecurrenceEndDate
+                RecurrenceEndDate = _model.RecurrenceEndDate.HasValue
+                    ? LocalDate.FromDateTime(_model.RecurrenceEndDate.Value)
+                    : null
             };
         }
 
@@ -243,6 +263,7 @@
         public DateTime StartTime { get; set; }
         public DateTime EndTime { get; set; }
         public int Capacity { get; set; } = 1;
+        public string TimeZoneId { get; set; } = string.Empty;
         public bool IsRecurring { get; set; }
         public RecurrenceType RecurrenceType { get; set; } = RecurrenceType.Weekly;
         public int Interval { get; set; } = 1;
