@@ -1,0 +1,265 @@
+@using NodaTime
+@inject IEventService EventService
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Navigation
+@rendermode InteractiveServer
+
+<div class="side-panel-overlay @(IsVisible ? "show" : "")" @onclick="Close"></div>
+<div class="side-panel @(IsVisible ? "show" : "")">
+    @if (_event is not null)
+    {
+        <div class="side-panel-header">
+            <h5>@_event.Title</h5>
+            <button class="btn-panel-close" @onclick="Close">&times;</button>
+        </div>
+        <div class="side-panel-body">
+            @if (!string.IsNullOrEmpty(_statusMessage))
+            {
+                <div class="alert @(_isError ? "alert-danger" : "alert-success") py-2 small">@_statusMessage</div>
+            }
+
+            <div class="mb-3" style="color: var(--text-muted); font-size: 0.85rem;">
+                by @_event.Owner?.DisplayName
+            </div>
+
+            @if (!string.IsNullOrEmpty(_event.Description))
+            {
+                <p style="color: var(--text-secondary);">@_event.Description</p>
+            }
+
+            <div class="mb-3">
+                <div class="d-flex justify-content-between mb-1">
+                    <span style="color: var(--text-muted);">Time</span>
+                    <span>@_event.StartTime.ToString("MMM dd, yyyy h:mm tt", null) - @_event.EndTime.ToString("h:mm tt", null)</span>
+                </div>
+                <div class="d-flex justify-content-between mb-1">
+                    <span style="color: var(--text-muted);">Timezone</span>
+                    <span>@_event.TimeZoneId</span>
+                </div>
+                <div class="d-flex justify-content-between mb-1">
+                    <span style="color: var(--text-muted);">Capacity</span>
+                    <span>@_event.Capacity per session</span>
+                </div>
+                @if (_event.Recurrence is not null)
+                {
+                    <div class="d-flex justify-content-between mb-1">
+                        <span style="color: var(--text-muted);">Recurrence</span>
+                        <span>@_event.Recurrence.Type (every @_event.Recurrence.Interval)</span>
+                    </div>
+                }
+            </div>
+
+            @if (_nextOccurrence is not null)
+            {
+                <div class="card mb-3">
+                    <div class="card-body py-2 px-3">
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <strong>Next Session</strong>
+                            @if (_nextOccurrence.IsCancelled)
+                            {
+                                <span class="badge" style="background-color: var(--accent-danger);">Cancelled</span>
+                            }
+                            else
+                            {
+                                <span class="badge" style="background-color: var(--accent-success);">
+                                    @_nextOccurrence.Signups.Count / @_event.Capacity signed up
+                                </span>
+                            }
+                        </div>
+                        <div style="color: var(--text-secondary); font-size: 0.9rem;">
+                            @_nextOccurrence.StartTime.ToString("ddd, MMM dd h:mm tt", null)
+                        </div>
+
+                        @if (!_nextOccurrence.IsCancelled)
+                        {
+                            <div class="mt-2 d-flex gap-2">
+                                @if (_isSignedUp)
+                                {
+                                    <button class="btn btn-sm btn-outline-primary" @onclick="CancelSignup" disabled="@_actionInProgress">
+                                        Cancel Signup
+                                    </button>
+                                }
+                                else if (_nextOccurrence.Signups.Count < _event.Capacity)
+                                {
+                                    <button class="btn btn-sm btn-primary" @onclick="SignUp" disabled="@_actionInProgress">
+                                        Sign Up
+                                    </button>
+                                }
+
+                                @if (_isOwner && !_nextOccurrence.IsCancelled)
+                                {
+                                    <button class="btn btn-sm" style="color: var(--accent-danger); border-color: var(--accent-danger);"
+                                            @onclick="CancelOccurrence" disabled="@_actionInProgress">
+                                        Cancel Session
+                                    </button>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+
+            <div class="d-flex gap-2 flex-wrap">
+                <a href="events/@_event.Id" class="btn btn-sm btn-secondary">View Full Details</a>
+                @if (_isOwner)
+                {
+                    <button class="btn btn-sm btn-secondary" @onclick="EditEvent">Edit</button>
+                }
+            </div>
+        </div>
+    }
+    else if (IsVisible)
+    {
+        <div class="side-panel-header">
+            <h5>Loading...</h5>
+            <button class="btn-panel-close" @onclick="Close">&times;</button>
+        </div>
+        <div class="side-panel-body">
+            <div class="spinner-border spinner-border-sm"></div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public bool IsVisible { get; set; }
+    [Parameter] public EventCallback<bool> IsVisibleChanged { get; set; }
+    [Parameter] public int? EventId { get; set; }
+    [Parameter] public EventCallback OnEventChanged { get; set; }
+    [Parameter] public EventCallback<int> OnEditRequested { get; set; }
+
+    private Event? _event;
+    private EventOccurrence? _nextOccurrence;
+    private bool _isOwner;
+    private bool _isSignedUp;
+    private int _currentUserId;
+    private string? _statusMessage;
+    private bool _isError;
+    private bool _actionInProgress;
+    private int? _lastEventId;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (IsVisible && EventId.HasValue && EventId != _lastEventId)
+        {
+            _lastEventId = EventId;
+            _statusMessage = null;
+            await LoadEvent();
+        }
+        else if (!IsVisible)
+        {
+            _lastEventId = null;
+        }
+    }
+
+    private async Task LoadEvent()
+    {
+        if (!EventId.HasValue) return;
+
+        _event = await EventService.GetEventAsync(EventId.Value);
+        if (_event is null) return;
+
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var userIdClaim = authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
+        if (userIdClaim is not null && int.TryParse(userIdClaim.Value, out var uid))
+        {
+            _currentUserId = uid;
+            _isOwner = _event.OwnerUserId == uid;
+        }
+
+        var now = SystemClock.Instance.GetCurrentInstant();
+        var zone = Services.TimeZoneHelper.GetZone(_event.TimeZoneId);
+        var nowLocal = now.InZone(zone).LocalDateTime;
+
+        _nextOccurrence = _event.Occurrences
+            .Where(o => o.StartTime.CompareTo(nowLocal) >= 0)
+            .OrderBy(o => o.StartTime)
+            .FirstOrDefault();
+
+        if (_nextOccurrence is not null)
+        {
+            _isSignedUp = _nextOccurrence.Signups.Any(s => s.UserId == _currentUserId);
+        }
+    }
+
+    private async Task SignUp()
+    {
+        if (_nextOccurrence is null || _event is null) return;
+        _actionInProgress = true;
+        _statusMessage = null;
+
+        var (success, error) = await EventService.SignUpAsync(_nextOccurrence.Id, _currentUserId);
+        if (success)
+        {
+            _statusMessage = "Signed up!";
+            _isError = false;
+            await LoadEvent();
+            await OnEventChanged.InvokeAsync();
+        }
+        else
+        {
+            _statusMessage = error;
+            _isError = true;
+        }
+        _actionInProgress = false;
+    }
+
+    private async Task CancelSignup()
+    {
+        if (_nextOccurrence is null || _event is null) return;
+        _actionInProgress = true;
+        _statusMessage = null;
+
+        var (success, error) = await EventService.CancelSignUpAsync(_nextOccurrence.Id, _currentUserId);
+        if (success)
+        {
+            _statusMessage = "Signup cancelled.";
+            _isError = false;
+            await LoadEvent();
+            await OnEventChanged.InvokeAsync();
+        }
+        else
+        {
+            _statusMessage = error;
+            _isError = true;
+        }
+        _actionInProgress = false;
+    }
+
+    private async Task CancelOccurrence()
+    {
+        if (_nextOccurrence is null) return;
+        _actionInProgress = true;
+        _statusMessage = null;
+
+        var (success, error) = await EventService.CancelOccurrenceAsync(_nextOccurrence.Id, _currentUserId);
+        if (success)
+        {
+            _statusMessage = "Session cancelled.";
+            _isError = false;
+            await LoadEvent();
+            await OnEventChanged.InvokeAsync();
+        }
+        else
+        {
+            _statusMessage = error;
+            _isError = true;
+        }
+        _actionInProgress = false;
+    }
+
+    private async Task EditEvent()
+    {
+        if (_event is not null)
+        {
+            await OnEditRequested.InvokeAsync(_event.Id);
+        }
+    }
+
+    private async Task Close()
+    {
+        IsVisible = false;
+        _event = null;
+        _lastEventId = null;
+        await IsVisibleChanged.InvokeAsync(false);
+    }
+}

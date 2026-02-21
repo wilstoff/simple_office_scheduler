@@ -11,6 +11,8 @@ interface CalendarOptions {
     elementId: string;
     eventsUrl: string;
     initialView: string;
+    selectable?: boolean;
+    selectMirror?: boolean;
 }
 
 let calendarInstance: Calendar | null = null;
@@ -46,9 +48,36 @@ export function initCalendar(
                 console.error('Failed to fetch events from', options.eventsUrl);
             }
         },
+        selectable: options.selectable ?? true,
+        selectMirror: options.selectMirror ?? true,
+        select: (info) => {
+            dotNetRef.invokeMethodAsync(
+                'OnTimeRangeSelected',
+                info.startStr,
+                info.endStr,
+                info.allDay
+            );
+            calendarInstance?.unselect();
+        },
         eventClick: (info: EventClickArg) => {
             info.jsEvent.preventDefault();
-            dotNetRef.invokeMethodAsync('OnEventClicked', info.event.id, info.event.url || '');
+            const props = info.event.extendedProps;
+            dotNetRef.invokeMethodAsync(
+                'OnEventClicked',
+                info.event.id,
+                JSON.stringify({
+                    title: info.event.title,
+                    start: info.event.startStr,
+                    end: info.event.endStr,
+                    eventId: props['eventId'],
+                    capacity: props['capacity'],
+                    signedUp: props['signedUp'],
+                    isCancelled: props['isCancelled'],
+                    owner: props['owner'],
+                    timeZoneId: props['timeZoneId'],
+                    url: info.event.url || ''
+                })
+            );
         },
         datesSet: (info: DatesSetArg) => {
             dotNetRef.invokeMethodAsync('OnDatesChanged', info.startStr, info.endStr);
@@ -91,4 +120,8 @@ export function destroyCalendar(): void {
 
 export function refetchEvents(): void {
     calendarInstance?.refetchEvents();
+}
+
+export function resizeCalendar(): void {
+    calendarInstance?.updateSize();
 }

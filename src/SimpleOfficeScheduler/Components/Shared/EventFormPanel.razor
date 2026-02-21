@@ -1,0 +1,279 @@
+@using NodaTime
+@using SimpleOfficeScheduler.Services
+@inject IEventService EventService
+@inject AuthenticationStateProvider AuthStateProvider
+@rendermode InteractiveServer
+
+<div class="side-panel-overlay @(IsVisible ? "show" : "")" @onclick="Close"></div>
+<div class="side-panel @(IsVisible ? "show" : "")">
+    <div class="side-panel-header">
+        <h5>@(EventId.HasValue ? "Edit Event" : "New Event")</h5>
+        <button class="btn-panel-close" @onclick="Close">&times;</button>
+    </div>
+    <div class="side-panel-body">
+        @if (!string.IsNullOrEmpty(_errorMessage))
+        {
+            <div class="alert alert-danger py-2 small">@_errorMessage</div>
+        }
+
+        <EditForm Model="_model" OnValidSubmit="HandleSubmit">
+            <DataAnnotationsValidator />
+
+            <div class="mb-3">
+                <label class="form-label">Title</label>
+                <InputText class="form-control" @bind-Value="_model.Title" placeholder="Event title" />
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Description</label>
+                <InputTextArea class="form-control" rows="2" @bind-Value="_model.Description" placeholder="Optional description" />
+            </div>
+
+            <div class="row">
+                <div class="col-6 mb-3">
+                    <label class="form-label">Start</label>
+                    <InputDate Type="InputDateType.DateTimeLocal" class="form-control" @bind-Value="_model.StartTime" />
+                </div>
+                <div class="col-6 mb-3">
+                    <label class="form-label">End</label>
+                    <InputDate Type="InputDateType.DateTimeLocal" class="form-control" @bind-Value="_model.EndTime" />
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Timezone</label>
+                <InputSelect class="form-select" @bind-Value="_model.TimeZoneId">
+                    @foreach (var tz in _timeZones)
+                    {
+                        <option value="@tz.Id">@tz.DisplayName</option>
+                    }
+                </InputSelect>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Capacity</label>
+                <InputNumber class="form-control" @bind-Value="_model.Capacity" min="1" />
+            </div>
+
+            <div class="mb-3">
+                <div class="form-check">
+                    <InputCheckbox class="form-check-input" @bind-Value="_model.IsRecurring" />
+                    <label class="form-check-label">Recurring event</label>
+                </div>
+            </div>
+
+            @if (_model.IsRecurring)
+            {
+                <div class="card mb-3">
+                    <div class="card-body py-2 px-3">
+                        <div class="mb-2">
+                            <label class="form-label">Frequency</label>
+                            <InputSelect class="form-select form-select-sm" @bind-Value="_model.RecurrenceType">
+                                <option value="@RecurrenceType.Daily">Daily</option>
+                                <option value="@RecurrenceType.Weekly">Weekly</option>
+                                <option value="@RecurrenceType.BiWeekly">Bi-Weekly</option>
+                                <option value="@RecurrenceType.Monthly">Monthly</option>
+                            </InputSelect>
+                        </div>
+
+                        <div class="mb-2">
+                            <label class="form-label">Every</label>
+                            <InputNumber class="form-control form-control-sm" @bind-Value="_model.Interval" min="1" />
+                        </div>
+
+                        @if (_model.RecurrenceType is RecurrenceType.Weekly or RecurrenceType.BiWeekly)
+                        {
+                            <div class="mb-2">
+                                <label class="form-label">Days</label>
+                                <div class="d-flex flex-wrap gap-1">
+                                    @foreach (var day in Enum.GetValues<DayOfWeek>())
+                                    {
+                                        var isChecked = _model.DaysOfWeek.Contains(day);
+                                        <div class="form-check form-check-inline">
+                                            <input type="checkbox" class="form-check-input"
+                                                   checked="@isChecked"
+                                                   @onchange="e => ToggleDay(day, (bool)e.Value!)" />
+                                            <label class="form-check-label small">@day.ToString()[..3]</label>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        }
+
+                        <div class="mb-2">
+                            <label class="form-label">End date (optional)</label>
+                            <InputDate class="form-control form-control-sm" @bind-Value="_model.RecurrenceEndDate" />
+                        </div>
+                    </div>
+                </div>
+            }
+
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-primary flex-fill" disabled="@_isSubmitting">
+                    @if (_isSubmitting)
+                    {
+                        <span class="spinner-border spinner-border-sm me-1"></span>
+                    }
+                    @(EventId.HasValue ? "Update" : "Create")
+                </button>
+                <button type="button" class="btn btn-secondary" @onclick="Close">Cancel</button>
+            </div>
+        </EditForm>
+    </div>
+</div>
+
+@code {
+    [Parameter] public bool IsVisible { get; set; }
+    [Parameter] public EventCallback<bool> IsVisibleChanged { get; set; }
+    [Parameter] public DateTime? PrefilledStart { get; set; }
+    [Parameter] public DateTime? PrefilledEnd { get; set; }
+    [Parameter] public int? EventId { get; set; }
+    [Parameter] public EventCallback OnEventSaved { get; set; }
+
+    private EventFormModel _model = new();
+    private string? _errorMessage;
+    private bool _isSubmitting;
+    private List<(string Id, string DisplayName)> _timeZones = new();
+    private bool _lastVisible;
+
+    protected override void OnInitialized()
+    {
+        _timeZones = TimeZoneHelper.GetCommonTimeZones();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // When panel becomes visible, initialize form
+        if (IsVisible && !_lastVisible)
+        {
+            _errorMessage = null;
+
+            if (EventId.HasValue)
+            {
+                var evt = await EventService.GetEventAsync(EventId.Value);
+                if (evt is not null)
+                {
+                    _model = new EventFormModel
+                    {
+                        Title = evt.Title,
+                        Description = evt.Description,
+                        StartTime = evt.StartTime.ToDateTimeUnspecified(),
+                        EndTime = evt.EndTime.ToDateTimeUnspecified(),
+                        Capacity = evt.Capacity,
+                        TimeZoneId = evt.TimeZoneId,
+                        IsRecurring = evt.Recurrence is not null,
+                        RecurrenceType = evt.Recurrence?.Type ?? RecurrenceType.Weekly,
+                        Interval = evt.Recurrence?.Interval ?? 1,
+                        DaysOfWeek = evt.Recurrence?.DaysOfWeek ?? new List<DayOfWeek>(),
+                        RecurrenceEndDate = evt.Recurrence?.RecurrenceEndDate?.ToDateTimeUnspecified()
+                    };
+                }
+            }
+            else
+            {
+                _model = new EventFormModel
+                {
+                    StartTime = PrefilledStart ?? DateTime.Now.Date.AddDays(1).AddHours(9),
+                    EndTime = PrefilledEnd ?? DateTime.Now.Date.AddDays(1).AddHours(10),
+                    TimeZoneId = TimeZoneHelper.GetLocalTimeZoneId()
+                };
+            }
+        }
+        _lastVisible = IsVisible;
+    }
+
+    private void ToggleDay(DayOfWeek day, bool isChecked)
+    {
+        if (isChecked && !_model.DaysOfWeek.Contains(day))
+            _model.DaysOfWeek.Add(day);
+        else if (!isChecked)
+            _model.DaysOfWeek.Remove(day);
+    }
+
+    private async Task HandleSubmit()
+    {
+        _isSubmitting = true;
+        _errorMessage = null;
+
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var userIdClaim = authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
+        if (userIdClaim is null || !int.TryParse(userIdClaim.Value, out var userId))
+        {
+            _errorMessage = "Could not determine current user.";
+            _isSubmitting = false;
+            return;
+        }
+
+        var evt = new Event
+        {
+            Title = _model.Title,
+            Description = _model.Description,
+            StartTime = LocalDateTime.FromDateTime(_model.StartTime),
+            EndTime = LocalDateTime.FromDateTime(_model.EndTime),
+            Capacity = _model.Capacity,
+            TimeZoneId = _model.TimeZoneId
+        };
+
+        if (_model.IsRecurring)
+        {
+            evt.Recurrence = new RecurrencePattern
+            {
+                Type = _model.RecurrenceType,
+                Interval = _model.Interval,
+                DaysOfWeek = _model.DaysOfWeek,
+                RecurrenceEndDate = _model.RecurrenceEndDate.HasValue
+                    ? LocalDate.FromDateTime(_model.RecurrenceEndDate.Value)
+                    : null
+            };
+        }
+
+        try
+        {
+            if (EventId.HasValue)
+            {
+                evt.Id = EventId.Value;
+                var (success, error) = await EventService.UpdateEventAsync(evt, userId);
+                if (!success)
+                {
+                    _errorMessage = error;
+                    _isSubmitting = false;
+                    return;
+                }
+            }
+            else
+            {
+                await EventService.CreateEventAsync(evt, userId);
+            }
+
+            await OnEventSaved.InvokeAsync();
+            await Close();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+
+        _isSubmitting = false;
+    }
+
+    private async Task Close()
+    {
+        IsVisible = false;
+        await IsVisibleChanged.InvokeAsync(false);
+    }
+
+    private class EventFormModel
+    {
+        public string Title { get; set; } = string.Empty;
+        public string? Description { get; set; }
+        public DateTime StartTime { get; set; }
+        public DateTime EndTime { get; set; }
+        public int Capacity { get; set; } = 1;
+        public string TimeZoneId { get; set; } = string.Empty;
+        public bool IsRecurring { get; set; }
+        public RecurrenceType RecurrenceType { get; set; } = RecurrenceType.Weekly;
+        public int Interval { get; set; } = 1;
+        public List<DayOfWeek> DaysOfWeek { get; set; } = new();
+        public DateTime? RecurrenceEndDate { get; set; }
+    }
+}
