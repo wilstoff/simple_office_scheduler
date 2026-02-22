@@ -54,6 +54,37 @@
             if (d) d.style.display = isLight ? 'none' : 'inline';
             if (l) l.style.display = isLight ? 'inline' : 'none';
         });
+        // Re-apply theme after Blazor enhanced navigation (head scripts don't re-run)
+        function applyThemeFromStorage() {
+            var t = localStorage.getItem('theme');
+            if (t === 'light') {
+                document.documentElement.setAttribute('data-theme', 'light');
+            } else {
+                document.documentElement.removeAttribute('data-theme');
+            }
+            var d = document.querySelector('.theme-icon-dark');
+            var l = document.querySelector('.theme-icon-light');
+            var isLight = t === 'light';
+            if (d) d.style.display = isLight ? 'none' : 'inline';
+            if (l) l.style.display = isLight ? 'inline' : 'none';
+        }
+        document.addEventListener('blazor:enhancedload', function() {
+            applyThemeFromStorage();
+        });
+        // MutationObserver as fallback: if enhanced nav patches away data-theme, re-apply
+        (function() {
+            var guard = false;
+            new MutationObserver(function() {
+                if (guard) return;
+                var expected = localStorage.getItem('theme');
+                var current = document.documentElement.getAttribute('data-theme');
+                if (expected === 'light' && current !== 'light') {
+                    guard = true;
+                    document.documentElement.setAttribute('data-theme', 'light');
+                    setTimeout(function() { guard = false; }, 0);
+                }
+            }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+        })();
     </script>
     <link rel="stylesheet" href="bootstrap/bootstrap.min.css" />
     <link rel="stylesheet" href="app.css?v=4" />

@@ -582,7 +582,7 @@ public class UITests : IClassFixture<PlaywrightWebAppFixture>, IAsyncLifetime
     // ===== TDD TESTS: Theme Persistence (Req 1) =====
 
     [Fact]
-    public async Task Theme_Persists_Across_Page_Navigation_Via_DB()
+    public async Task Theme_Persists_Across_All_Page_Navigations()
     {
         await _page.GotoAsync($"{_fixture.BaseUrl}/");
         await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
@@ -596,27 +596,40 @@ public class UITests : IClassFixture<PlaywrightWebAppFixture>, IAsyncLifetime
         // Wait for DB save to complete
         await _page.WaitForTimeoutAsync(500);
 
-        // Navigate to Events page
-        await _page.Locator(".sidebar").HoverAsync();
-        await _page.WaitForTimeoutAsync(300);
-        await _page.Locator(".nav-link", new() { HasText = "Events" }).ClickAsync();
+        // Navigate through sidebar pages and verify theme persists on each
+        var sidebarPages = new[] { "Events", "Create Event", "Calendar" };
+        foreach (var pageName in sidebarPages)
+        {
+            await _page.Locator(".sidebar").HoverAsync();
+            await _page.WaitForTimeoutAsync(300);
+            await _page.Locator(".nav-link", new() { HasText = pageName }).ClickAsync();
+            await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+            await _page.WaitForTimeoutAsync(300);
+
+            var theme = await _page.EvaluateAsync<string?>(
+                "document.documentElement.getAttribute('data-theme')");
+            Assert.Equal("light", theme);
+        }
+
+        // Navigate to Settings page via the user avatar link
+        await _page.Locator(".user-link").ClickAsync();
         await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await _page.WaitForTimeoutAsync(300);
 
-        // Theme should still be light after navigation
-        var theme = await _page.EvaluateAsync<string?>(
+        var settingsTheme = await _page.EvaluateAsync<string?>(
             "document.documentElement.getAttribute('data-theme')");
-        Assert.Equal("light", theme);
+        Assert.Equal("light", settingsTheme);
 
-        // Navigate back to calendar
+        // Navigate back to Calendar from Settings via sidebar
         await _page.Locator(".sidebar").HoverAsync();
         await _page.WaitForTimeoutAsync(300);
         await _page.Locator(".nav-link", new() { HasText = "Calendar" }).ClickAsync();
         await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await _page.WaitForTimeoutAsync(300);
 
-        // Theme should still persist
-        var themeAfterReturn = await _page.EvaluateAsync<string?>(
+        var finalTheme = await _page.EvaluateAsync<string?>(
             "document.documentElement.getAttribute('data-theme')");
-        Assert.Equal("light", themeAfterReturn);
+        Assert.Equal("light", finalTheme);
     }
 
     // ===== TDD TESTS: Logo Alignment (Req 2) =====
