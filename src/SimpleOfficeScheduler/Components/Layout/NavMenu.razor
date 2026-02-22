@@ -1,9 +1,16 @@
 @using Microsoft.AspNetCore.Components.Authorization
 
-<div class="top-row ps-3 navbar navbar-dark">
-    <div class="container-fluid">
-        <a class="navbar-brand" href="">Office Scheduler</a>
-    </div>
+<div class="top-row navbar navbar-dark">
+    <NavLink class="navbar-brand" href="" Match="NavLinkMatch.All" data-enhance-nav="false">
+        <svg class="brand-logo" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <rect x="1" y="4" width="26" height="23" rx="3" stroke="white" stroke-width="1.8" fill="none"/>
+            <line x1="1" y1="10" x2="27" y2="10" stroke="white" stroke-width="1.5"/>
+            <line x1="8" y1="4" x2="8" y2="1" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+            <line x1="20" y1="4" x2="20" y2="1" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+            <text x="14" y="22" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="11" font-weight="bold">S</text>
+        </svg>
+        <span class="nav-label">Office Scheduler</span>
+    </NavLink>
 </div>
 
 <input type="checkbox" title="Navigation menu" class="navbar-toggler" />
@@ -12,28 +19,28 @@
     <nav class="flex-column">
         <AuthorizeView>
             <Authorized>
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
+                <div class="nav-item">
+                    <NavLink class="nav-link" href="" Match="NavLinkMatch.All" data-enhance-nav="false">
                         <span class="bi bi-calendar-week-nav-menu" aria-hidden="true"></span>
                         <span class="nav-label">Calendar</span>
                     </NavLink>
                 </div>
 
-                <div class="nav-item px-3">
+                <div class="nav-item">
                     <NavLink class="nav-link" href="events">
                         <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span>
                         <span class="nav-label">Events</span>
                     </NavLink>
                 </div>
 
-                <div class="nav-item px-3">
+                <div class="nav-item">
                     <NavLink class="nav-link" href="events/create">
                         <span class="bi bi-plus-square-fill-nav-menu" aria-hidden="true"></span>
                         <span class="nav-label">Create Event</span>
                     </NavLink>
                 </div>
 
-                <div class="nav-item px-3">
+                <div class="nav-item">
                     <NavLink class="nav-link" href="dashboard">
                         <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span>
                         <span class="nav-label">Dashboard</span>
@@ -41,7 +48,7 @@
                 </div>
             </Authorized>
             <NotAuthorized>
-                <div class="nav-item px-3">
+                <div class="nav-item">
                     <NavLink class="nav-link" href="login">
                         <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span>
                         <span class="nav-label">Login</span>

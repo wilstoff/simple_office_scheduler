@@ -12,11 +12,8 @@
 
 <div class="row mb-3">
     <div class="col-md-6">
-        <div class="input-group">
-            <input type="text" class="form-control" placeholder="Search events..."
-                   @bind="_searchTerm" @bind:event="oninput" @onkeyup="HandleSearch" />
-            <button class="btn btn-outline-secondary" @onclick="Search">Search</button>
-        </div>
+        <input type="text" class="form-control" placeholder="Search events..."
+               @bind="_searchTerm" @bind:event="oninput" @bind:after="OnSearchInput" />
     </div>
     <div class="col-md-6 text-end">
         <a href="events/create" class="btn btn-primary">Create Event</a>
@@ -92,16 +89,27 @@ else
 @code {
     private List<Event>? _events;
     private string? _searchTerm;
+    private CancellationTokenSource? _debounceTimer;
 
     protected override async Task OnInitializedAsync()
     {
         await Search();
     }
 
-    private async Task HandleSearch(KeyboardEventArgs e)
+    private async Task OnSearchInput()
     {
-        if (e.Key == "Enter")
-            await Search();
+        // Cancel any pending debounce
+        _debounceTimer?.Cancel();
+        _debounceTimer = new CancellationTokenSource();
+        var token = _debounceTimer.Token;
+
+        try
+        {
+            await Task.Delay(250, token);
+            if (!token.IsCancellationRequested)
+                await Search();
+        }
+        catch (TaskCanceledException) { }
     }
 
     private async Task Search()

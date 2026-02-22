@@ -13,10 +13,12 @@ namespace SimpleOfficeScheduler.Controllers;
 public class EventsApiController : ControllerBase
 {
     private readonly IEventService _eventService;
+    private readonly CalendarUpdateNotifier _notifier;
 
-    public EventsApiController(IEventService eventService)
+    public EventsApiController(IEventService eventService, CalendarUpdateNotifier notifier)
     {
         _eventService = eventService;
+        _notifier = notifier;
     }
 
     private int GetUserId() =>
@@ -101,6 +103,7 @@ public class EventsApiController : ControllerBase
         };
 
         var created = await _eventService.CreateEventAsync(evt, GetUserId());
+        _notifier.Notify();
         var full = await _eventService.GetEventAsync(created.Id);
         return CreatedAtAction(nameof(GetEvent), new { id = created.Id }, MapEventResponse(full!));
     }
@@ -131,16 +134,18 @@ public class EventsApiController : ControllerBase
         var (success, error) = await _eventService.UpdateEventAsync(evt, GetUserId());
         if (!success) return BadRequest(new { error });
 
+        _notifier.Notify();
         var updated = await _eventService.GetEventAsync(id);
         return Ok(MapEventResponse(updated!));
     }
 
     [HttpPost("{eventId:int}/signup/{occurrenceId:int}")]
     [Authorize]
-    public async Task<IActionResult> SignUp(int eventId, int occurrenceId)
+    public async Task<IActionResult> SignUp(int eventId, int occurrenceId, [FromBody] SignUpRequest? request = null)
     {
-        var (success, error) = await _eventService.SignUpAsync(occurrenceId, GetUserId());
+        var (success, error) = await _eventService.SignUpAsync(occurrenceId, GetUserId(), request?.Message);
         if (!success) return BadRequest(new { error });
+        _notifier.Notify();
         return Ok();
     }
 
@@ -150,6 +155,7 @@ public class EventsApiController : ControllerBase
     {
         var (success, error) = await _eventService.CancelSignUpAsync(occurrenceId, GetUserId());
         if (!success) return BadRequest(new { error });
+        _notifier.Notify();
         return Ok();
     }
 
@@ -159,6 +165,7 @@ public class EventsApiController : ControllerBase
     {
         var (success, error) = await _eventService.CancelOccurrenceAsync(occurrenceId, GetUserId());
         if (!success) return BadRequest(new { error });
+        _notifier.Notify();
         return Ok();
     }
 
@@ -168,6 +175,7 @@ public class EventsApiController : ControllerBase
     {
         var (success, error) = await _eventService.TransferOwnershipAsync(id, GetUserId(), newOwnerId);
         if (!success) return BadRequest(new { error });
+        _notifier.Notify();
         return Ok();
     }
 
@@ -211,7 +219,8 @@ public class EventsApiController : ControllerBase
                 {
                     UserId = s.UserId,
                     DisplayName = s.User?.DisplayName ?? "",
-                    SignedUpAt = s.SignedUpAt
+                    SignedUpAt = s.SignedUpAt,
+                    Message = s.Message
                 }).ToList() ?? new()
             };
         }).OrderBy(o => o.StartTime).ToList() ?? new()

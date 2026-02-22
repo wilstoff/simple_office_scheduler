@@ -42,7 +42,7 @@ namespace SimpleOfficeScheduler.Migrations
                     EndTime = table.Column<DateTime>(type: "TEXT", nullable: false),
                     DurationMinutes = table.Column<int>(type: "INTEGER", nullable: false),
                     Capacity = table.Column<int>(type: "INTEGER", nullable: false),
-                    TimeZoneId = table.Column<string>(type: "TEXT", maxLength: 100, nullable: false, defaultValue: "America/New_York"),
+                    TimeZoneId = table.Column<string>(type: "TEXT", maxLength: 100, nullable: false),
                     Recurrence_Type = table.Column<int>(type: "INTEGER", nullable: true),
                     Recurrence_DaysOfWeek = table.Column<string>(type: "TEXT", nullable: true),
                     Recurrence_Interval = table.Column<int>(type: "INTEGER", nullable: true),
@@ -93,7 +93,8 @@ namespace SimpleOfficeScheduler.Migrations
                         .Annotation("Sqlite:Autoincrement", true),
                     EventOccurrenceId = table.Column<int>(type: "INTEGER", nullable: false),
                     UserId = table.Column<int>(type: "INTEGER", nullable: false),
-                    SignedUpAt = table.Column<DateTime>(type: "TEXT", nullable: false)
+                    SignedUpAt = table.Column<DateTime>(type: "TEXT", nullable: false),
+                    Message = table.Column<string>(type: "TEXT", nullable: true)
                 },
                 constraints: table =>
                 {

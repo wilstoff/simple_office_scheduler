@@ -2,10 +2,13 @@
 @using SimpleOfficeScheduler.Services
 @inject IEventService EventService
 @inject AuthenticationStateProvider AuthStateProvider
+@inject IJSRuntime JS
 @rendermode InteractiveServer
 
-<div class="side-panel-overlay @(IsVisible ? "show" : "")" @onclick="Close"></div>
-<div class="side-panel @(IsVisible ? "show" : "")">
+<div class="side-panel-overlay @(IsVisible ? "show" : "")" @onclick="Close"
+     style="position:fixed;inset:0;z-index:1040;"></div>
+<div class="side-panel @(IsVisible ? "show" : "")"
+     style="position:fixed;top:0;width:560px;height:100vh;z-index:1050;right:@(IsVisible ? "0" : "-580px");transition:right 0.3s ease;overflow-y:auto;">
     <div class="side-panel-header">
         <h5>@(EventId.HasValue ? "Edit Event" : "New Event")</h5>
         <button class="btn-panel-close" @onclick="Close">&times;</button>
@@ -48,6 +51,9 @@
                         <option value="@tz.Id">@tz.DisplayName</option>
                     }
                 </InputSelect>
+                <button type="button" class="btn btn-link btn-sm p-0 mt-1" style="font-size:0.8rem;" @onclick="ToggleAllTimeZones">
+                    @(_showAllTimeZones ? "Show fewer timezones" : "Show all timezones")
+                </button>
             </div>
 
             <div class="mb-3">
@@ -57,8 +63,8 @@
 
             <div class="mb-3">
                 <div class="form-check">
-                    <InputCheckbox class="form-check-input" @bind-Value="_model.IsRecurring" />
-                    <label class="form-check-label">Recurring event</label>
+                    <InputCheckbox id="panelIsRecurring" class="form-check-input" @bind-Value="_model.IsRecurring" />
+                    <label class="form-check-label" for="panelIsRecurring">Recurring event</label>
                 </div>
             </div>
 
@@ -134,11 +140,32 @@
     private string? _errorMessage;
     private bool _isSubmitting;
     private List<(string Id, string DisplayName)> _timeZones = new();
+    private bool _showAllTimeZones;
     private bool _lastVisible;
 
     protected override void OnInitialized()
     {
         _timeZones = TimeZoneHelper.GetCommonTimeZones();
+    }
+
+    private void ToggleAllTimeZones()
+    {
+        _showAllTimeZones = !_showAllTimeZones;
+        var currentId = _model.TimeZoneId;
+        _timeZones = _showAllTimeZones
+            ? TimeZoneHelper.GetAllTimeZones()
+            : TimeZoneHelper.GetCommonTimeZones();
+
+        // If the current selection isn't in the new list, keep it visible by adding it
+        if (!string.IsNullOrEmpty(currentId) && !_timeZones.Any(tz => tz.Id == currentId))
+        {
+            var allZones = TimeZoneHelper.GetAllTimeZones();
+            var match = allZones.FirstOrDefault(tz => tz.Id == currentId);
+            if (match != default)
+            {
+                _timeZones.Insert(0, match);
+            }
+        }
     }
 
     protected override async Task OnParametersSetAsync()
@@ -171,12 +198,38 @@
             }
             else
             {
+                // Detect the user's browser timezone via JS interop
+                string browserTz;
+                try
+                {
+                    browserTz = await JS.InvokeAsync<string>("eval",
+                        "Intl.DateTimeFormat().resolvedOptions().timeZone");
+                }
+                catch
+                {
+                    browserTz = TimeZoneHelper.GetLocalTimeZoneId();
+                }
+
+                // Validate the browser timezone is a known IANA ID, fallback to server default
+                var resolvedTz = TimeZoneHelper.ResolveTimeZoneId(browserTz);
+
                 _model = new EventFormModel
                 {
                     StartTime = PrefilledStart ?? DateTime.Now.Date.AddDays(1).AddHours(9),
                     EndTime = PrefilledEnd ?? DateTime.Now.Date.AddDays(1).AddHours(10),
-                    TimeZoneId = TimeZoneHelper.GetLocalTimeZoneId()
+                    TimeZoneId = resolvedTz
                 };
+
+                // Ensure the browser timezone appears in the dropdown even if not in the common list
+                if (!_timeZones.Any(tz => tz.Id == resolvedTz))
+                {
+                    var allZones = TimeZoneHelper.GetAllTimeZones();
+                    var match = allZones.FirstOrDefault(tz => tz.Id == resolvedTz);
+                    if (match != default)
+                    {
+                        _timeZones.Insert(0, match);
+                    }
+                }
             }
         }
         _lastVisible = IsVisible;

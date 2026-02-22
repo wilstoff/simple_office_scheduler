@@ -1,79 +1,79 @@
 /* ===== DARK THEME (DEFAULT) ===== */
 :root {
     /* Surface colors */
-    --bg-primary: #1a1a2e;
-    --bg-secondary: #16213e;
-    --bg-surface: #1f2937;
-    --bg-surface-hover: #2d3748;
-    --bg-elevated: #252f3f;
+    --bg-primary: #111827;
+    --bg-secondary: #151d2e;
+    --bg-surface: #1e2636;
+    --bg-surface-hover: #2a3345;
+    --bg-elevated: #232c3d;
 
     /* Sidebar */
-    --sidebar-bg: linear-gradient(180deg, #0f0c29 0%, #1a1a3e 50%, #24243e 100%);
-    --sidebar-text: #a0aec0;
-    --sidebar-active-bg: rgba(99, 102, 241, 0.3);
-    --sidebar-hover-bg: rgba(255, 255, 255, 0.08);
+    --sidebar-bg: linear-gradient(180deg, #0d1117 0%, #151d2e 50%, #1a2332 100%);
+    --sidebar-text: #8b9cb6;
+    --sidebar-active-bg: rgba(59, 130, 246, 0.25);
+    --sidebar-hover-bg: rgba(255, 255, 255, 0.06);
 
     /* Top bar */
-    --topbar-bg: #1e293b;
-    --topbar-border: #2d3748;
-    --topbar-text: #e2e8f0;
+    --topbar-bg: #161e2e;
+    --topbar-border: #253045;
+    --topbar-text: #d1d9e6;
 
     /* Text */
-    --text-primary: #e2e8f0;
-    --text-secondary: #a0aec0;
-    --text-muted: #718096;
+    --text-primary: #d1d9e6;
+    --text-secondary: #8b9cb6;
+    --text-muted: #5e7089;
 
     /* Borders */
-    --border-color: #2d3748;
-    --border-light: #4a5568;
+    --border-color: #253045;
+    --border-light: #3b4a63;
 
     /* Brand / accent */
-    --accent-primary: #6366f1;
-    --accent-primary-hover: #818cf8;
+    --accent-primary: #3b82f6;
+    --accent-primary-hover: #60a5fa;
     --accent-success: #34d399;
     --accent-warning: #fbbf24;
     --accent-danger: #f87171;
 
     /* Calendar-specific */
-    --fc-bg: #1f2937;
-    --fc-border: #374151;
-    --fc-today-bg: rgba(99, 102, 241, 0.1);
-    --fc-event-bg: #6366f1;
+    --fc-bg: #1e2636;
+    --fc-border: #2a3650;
+    --fc-today-bg: rgba(59, 130, 246, 0.08);
+    --fc-event-bg: #2563eb;
     --fc-event-text: #ffffff;
-    --fc-slot-line: #2d3748;
-    --fc-header-bg: #1e293b;
-    --fc-selected-bg: rgba(99, 102, 241, 0.25);
+    --fc-slot-line: #253045;
+    --fc-header-bg: #161e2e;
+    --fc-selected-bg: rgba(59, 130, 246, 0.2);
 
     /* Panel */
-    --panel-bg: #1f2937;
-    --panel-border: #374151;
+    --panel-bg: #1e2636;
+    --panel-border: #2a3650;
     --panel-backdrop: rgba(0, 0, 0, 0.5);
 
     /* Form controls */
-    --input-bg: #374151;
-    --input-border: #4b5563;
-    --input-text: #e2e8f0;
-    --input-placeholder: #6b7280;
-    --input-focus-border: #6366f1;
-    --input-focus-shadow: rgba(99, 102, 241, 0.25);
+    --input-bg: #2a3345;
+    --input-border: #3b4a63;
+    --input-text: #d1d9e6;
+    --input-placeholder: #5e7089;
+    --input-focus-border: #3b82f6;
+    --input-focus-shadow: rgba(59, 130, 246, 0.25);
 
     /* Buttons */
-    --btn-primary-bg: #6366f1;
-    --btn-primary-hover: #818cf8;
+    --btn-primary-bg: #2563eb;
+    --btn-primary-hover: #3b82f6;
     --btn-primary-text: #ffffff;
-    --btn-secondary-bg: #374151;
-    --btn-secondary-text: #e2e8f0;
-    --btn-secondary-border: #4b5563;
+    --btn-secondary-bg: #2a3345;
+    --btn-secondary-text: #d1d9e6;
+    --btn-secondary-border: #3b4a63;
 
     /* Cards */
-    --card-bg: #1f2937;
-    --card-border: #374151;
+    --card-bg: #1e2636;
+    --card-border: #2a3650;
 
     /* Table */
     --table-bg: transparent;
-    --table-border: #374151;
-    --table-hover-bg: #2d3748;
-    --table-header-bg: #1e293b;
+    --table-border: #2a3650;
+    --table-hover-bg: #2a3345;
+    --table-header-bg: #161e2e;
 
     /* Badges */
     --badge-info-bg: #3b82f6;
@@ -90,7 +90,7 @@
     --bg-surface-hover: #f1f5f9;
     --bg-elevated: #ffffff;
 
-    --sidebar-bg: linear-gradient(180deg, #052767 0%, #3a0647 70%);
+    --sidebar-bg: linear-gradient(180deg, #0f172a 0%, #1e3a5f 70%);
     --sidebar-text: #d7d7d7;
     --sidebar-active-bg: rgba(255, 255, 255, 0.37);
     --sidebar-hover-bg: rgba(255, 255, 255, 0.1);
@@ -101,7 +101,7 @@
 
     --text-primary: #1e293b;
     --text-secondary: #475569;
-    --text-muted: #94a3b8;
+    --text-muted: #64748b;
 
     --border-color: #e2e8f0;
     --border-light: #cbd5e1;
@@ -114,10 +114,10 @@
 
     --fc-bg: #ffffff;
     --fc-border: #e2e8f0;
-    --fc-today-bg: rgba(27, 110, 194, 0.05);
+    --fc-today-bg: rgba(27, 110, 194, 0.06);
     --fc-event-bg: #1b6ec2;
     --fc-event-text: #ffffff;
-    --fc-slot-line: #f1f5f9;
+    --fc-slot-line: #b0b7c0;
     --fc-header-bg: #f8fafc;
     --fc-selected-bg: rgba(27, 110, 194, 0.15);
 
@@ -156,8 +156,8 @@
 /* ===== BASE STYLES ===== */
 html, body {
     font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-    background-color: var(--bg-primary);
-    color: var(--text-primary);
+    background-color: var(--bg-primary) !important;
+    color: var(--text-primary) !important;
     transition: background-color 0.2s ease, color 0.2s ease;
 }
 
@@ -352,6 +352,10 @@ h1:focus {
     border-color: var(--fc-slot-line);
 }
 
+.fc .fc-timegrid-col.fc-day-today {
+    background: var(--fc-today-bg);
+}
+
 .fc .fc-timegrid-slot-label {
     color: var(--text-muted);
 }
@@ -396,6 +400,10 @@ h1:focus {
     border-color: var(--fc-border);
 }
 
+.fc-timegrid-event .fc-event-main {
+    overflow: hidden;
+}
+
 /* ===== SIDE PANEL ===== */
 .side-panel-overlay {
     position: fixed;
@@ -415,8 +423,8 @@ h1:focus {
 .side-panel {
     position: fixed;
     top: 0;
-    right: -400px;
-    width: 380px;
+    right: -580px;
+    width: 560px;
     height: 100vh;
     background: var(--panel-bg);
     border-left: 1px solid var(--panel-border);
@@ -513,7 +521,7 @@ h1:focus {
 /* ===== RESPONSIVE PANEL ===== */
 @media (max-width: 1280px) {
     .side-panel {
-        width: 340px;
+        width: 460px;
     }
 }
 
@@ -527,7 +535,28 @@ h1:focus {
 /* ===== SIDEBAR NAV LABELS (show on hover) ===== */
 @media (min-width: 641px) {
     .sidebar:hover .nav-label {
+        display: inline;
         opacity: 1 !important;
+    }
+
+    /* Expanded sidebar: left-align icons with label spacing */
+    .sidebar:hover .nav-item {
+        padding-left: 0.75rem;
+        padding-right: 0.75rem;
+    }
+
+    .sidebar:hover .nav-item .nav-link {
+        justify-content: flex-start;
+    }
+
+    .sidebar:hover .nav-item .nav-link .bi {
+        margin-right: 0.75rem;
+    }
+
+    .sidebar:hover .navbar-brand {
+        justify-content: flex-start;
+        width: auto;
+        overflow: visible;
     }
 }
 

@@ -9,6 +9,7 @@ using SimpleOfficeScheduler.Models;
 using SimpleOfficeScheduler.Services.Auth;
 using SimpleOfficeScheduler.Services.Calendar;
 using SimpleOfficeScheduler.Services.Events;
+using SimpleOfficeScheduler.Services;
 using SimpleOfficeScheduler.Services.Recurrence;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -60,6 +61,9 @@ else
 {
     builder.Services.AddScoped<ICalendarInviteService, NoOpCalendarService>();
 }
+
+// Real-time calendar update notifications
+builder.Services.AddSingleton<CalendarUpdateNotifier>();
 
 // Application services
 builder.Services.AddScoped<RecurrenceExpander>();

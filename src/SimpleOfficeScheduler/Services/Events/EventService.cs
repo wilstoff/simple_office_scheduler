@@ -123,7 +123,7 @@ public class EventService : IEventService
             .FirstOrDefaultAsync(o => o.Id == occurrenceId);
     }
 
-    public async Task<(bool Success, string? Error)> SignUpAsync(int occurrenceId, int userId)
+    public async Task<(bool Success, string? Error)> SignUpAsync(int occurrenceId, int userId, string? message = null)
     {
         var occurrence = await _db.EventOccurrences
             .Include(o => o.Event)
@@ -151,7 +151,8 @@ public class EventService : IEventService
         {
             EventOccurrenceId = occurrenceId,
             UserId = userId,
-            SignedUpAt = Now
+            SignedUpAt = Now,
+            Message = message
         };
 
         _db.EventSignups.Add(signup);

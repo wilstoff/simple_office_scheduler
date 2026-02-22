@@ -16,23 +16,16 @@ interface CalendarOptions {
 }
 
 let calendarInstance: Calendar | null = null;
+let calendarOwnerId: string | null = null;
+let lastDotNetRef: DotNetObjectReference | null = null;
+let lastOptions: CalendarOptions | null = null;
+let enhancedNavRegistered = false;
 
-export function initCalendar(
+function createAndRenderCalendar(
+    el: HTMLElement,
     dotNetRef: DotNetObjectReference,
     options: CalendarOptions
 ): void {
-    const el = document.getElementById(options.elementId);
-    if (!el) {
-        console.error(`Element with id '${options.elementId}' not found`);
-        return;
-    }
-
-    // Destroy previous instance if exists
-    if (calendarInstance) {
-        calendarInstance.destroy();
-        calendarInstance = null;
-    }
-
     calendarInstance = new Calendar(el, {
         plugins: [dayGridPlugin, timeGridPlugin, interactionPlugin],
         initialView: options.initialView || 'timeGridWeek',
@@ -57,8 +50,9 @@ export function initCalendar(
                 info.endStr,
                 info.allDay
             );
-            calendarInstance?.unselect();
+            // Don't unselect — keep the highlight visible while the panel is open
         },
+        unselectAuto: false,
         eventClick: (info: EventClickArg) => {
             info.jsEvent.preventDefault();
             const props = info.event.extendedProps;
@@ -89,18 +83,20 @@ export function initCalendar(
         eventDisplay: 'block',
         eventContent: (arg) => {
             const props = arg.event.extendedProps;
-            const capacityText = props['isCancelled']
-                ? 'CANCELLED'
-                : `${props['signedUp']}/${props['capacity']} signed up`;
+            let detailText: string;
+            if (props['isCancelled']) {
+                detailText = 'CANCELLED';
+            } else {
+                const cap = `${props['signedUp']}/${props['capacity']}`;
+                const owner = props['owner'] || '';
+                detailText = owner ? `${cap} · ${owner}` : cap;
+            }
 
             return {
                 html: `
-                    <div class="fc-event-main-frame" style="padding: 2px 4px;">
-                        <div class="fc-event-title-container">
-                            <div class="fc-event-title" style="font-weight: bold;">${arg.event.title}</div>
-                            <div style="font-size: 0.8em; opacity: 0.9;">${capacityText}</div>
-                            <div style="font-size: 0.75em; opacity: 0.8;">${props['owner'] || ''}</div>
-                        </div>
+                    <div style="padding: 2px 4px; overflow: hidden; height: 100%;">
+                        <div style="font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${arg.event.title}</div>
+                        <div style="font-size: 0.75em; opacity: 0.85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${detailText}</div>
                     </div>
                 `
             };
@@ -109,12 +105,81 @@ export function initCalendar(
     });
 
     calendarInstance.render();
+
+    // Watch for container size changes (e.g. sidebar CSS transition)
+    // and tell FullCalendar to recalculate its layout.
+    if (typeof ResizeObserver !== 'undefined') {
+        new ResizeObserver(() => {
+            calendarInstance?.updateSize();
+        }).observe(el);
+    }
 }
 
-export function destroyCalendar(): void {
+/**
+ * Checks if the calendar container was emptied (e.g. by enhanced navigation
+ * DOM patching) and reinitializes if needed. Returns true if recovery occurred.
+ */
+export function checkAndRecover(): boolean {
+    if (!lastOptions || !lastDotNetRef) return false;
+    const el = document.getElementById(lastOptions.elementId);
+    if (!el || el.children.length > 0) return false;
+
+    // Container is empty — reinitialize
+    if (calendarInstance) {
+        try { calendarInstance.destroy(); } catch { /* already detached */ }
+        calendarInstance = null;
+    }
+    createAndRenderCalendar(el, lastDotNetRef, lastOptions);
+    return true;
+}
+
+/**
+ * Registers a one-time listener for Blazor's enhanced navigation.
+ * After enhanced navigation patches the DOM, FullCalendar's JS-generated
+ * content may be wiped. This handler detects an empty container and
+ * reinitializes the calendar using stored parameters.
+ */
+function registerEnhancedNavHandler(): void {
+    if (enhancedNavRegistered) return;
+    enhancedNavRegistered = true;
+
+    const blazor = (window as any).Blazor;
+    if (blazor?.addEventListener) {
+        blazor.addEventListener('enhancedload', checkAndRecover);
+    }
+}
+
+export function initCalendar(
+    dotNetRef: DotNetObjectReference,
+    options: CalendarOptions,
+    ownerId: string
+): void {
+    const el = document.getElementById(options.elementId);
+    if (!el) {
+        console.error(`Element with id '${options.elementId}' not found`);
+        return;
+    }
+
+    // Destroy previous instance if exists
     if (calendarInstance) {
         calendarInstance.destroy();
         calendarInstance = null;
+    }
+
+    calendarOwnerId = ownerId;
+    lastDotNetRef = dotNetRef;
+    lastOptions = options;
+
+    createAndRenderCalendar(el, dotNetRef, options);
+    registerEnhancedNavHandler();
+}
+
+export function destroyCalendar(ownerId: string): void {
+    // Only destroy if this owner created the current calendar
+    if (calendarInstance && calendarOwnerId === ownerId) {
+        calendarInstance.destroy();
+        calendarInstance = null;
+        calendarOwnerId = null;
     }
 }
 
@@ -124,4 +189,8 @@ export function refetchEvents(): void {
 
 export function resizeCalendar(): void {
     calendarInstance?.updateSize();
+}
+
+export function clearSelection(): void {
+    calendarInstance?.unselect();
 }

@@ -10,4 +10,5 @@ public class EventSignup
     public int UserId { get; set; }
     public AppUser User { get; set; } = null!;
     public Instant SignedUpAt { get; set; }
+    public string? Message { get; set; }
 }

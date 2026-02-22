@@ -8,6 +8,7 @@ using NodaTime;
 using NodaTime.Serialization.SystemTextJson;
 using SimpleOfficeScheduler.Data;
 using SimpleOfficeScheduler.Models;
+using SimpleOfficeScheduler.Services;
 
 namespace SimpleOfficeScheduler.Tests;
 

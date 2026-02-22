@@ -23,7 +23,16 @@
 .navbar-brand {
     font-size: 1.1rem;
     white-space: nowrap;
-    overflow: hidden;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding-left: 0.75rem;
+}
+
+.brand-logo {
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
 }
 
 .bi {
@@ -56,6 +65,8 @@
 .nav-item {
     font-size: 0.9rem;
     padding-bottom: 0.5rem;
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
 }
 
     .nav-item:first-of-type {
@@ -118,5 +129,31 @@
         display: block;
         height: calc(100vh - 3.5rem);
         overflow-y: auto;
+    }
+
+    /* Collapsed sidebar: center icons, hide labels */
+    .nav-item {
+        padding-left: 0;
+        padding-right: 0;
+    }
+
+    .nav-item ::deep .nav-link {
+        justify-content: center;
+    }
+
+    .bi {
+        margin-right: 0;
+    }
+
+    .nav-label {
+        display: none;
+    }
+
+    /* Center brand logo in collapsed state */
+    .navbar-brand {
+        justify-content: center;
+        width: 48px;
+        overflow: hidden;
+        margin: 0 auto;
     }
 }

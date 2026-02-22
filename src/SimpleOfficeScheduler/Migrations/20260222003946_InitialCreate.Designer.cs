@@ -11,7 +11,7 @@ using SimpleOfficeScheduler.Data;
 namespace SimpleOfficeScheduler.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20260221074701_InitialCreate")]
+    [Migration("20260222003946_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />
@@ -143,6 +143,9 @@ namespace SimpleOfficeScheduler.Migrations
 
                     b.Property<int>("EventOccurrenceId")
                         .HasColumnType("INTEGER");
+
+                    b.Property<string>("Message")
+                        .HasColumnType("TEXT");
 
                     b.Property<DateTime>("SignedUpAt")
                         .HasColumnType("TEXT");

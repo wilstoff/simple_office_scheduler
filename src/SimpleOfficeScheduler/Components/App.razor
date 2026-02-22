@@ -10,10 +10,33 @@
             var t = localStorage.getItem('theme');
             if (t === 'light') document.documentElement.setAttribute('data-theme', 'light');
         })();
+        window.setTheme = function(theme) {
+            if (theme === 'light') {
+                document.documentElement.setAttribute('data-theme', 'light');
+            } else {
+                document.documentElement.removeAttribute('data-theme');
+            }
+            localStorage.setItem('theme', theme);
+        };
+        window.toggleTheme = function() {
+            var isLight = document.documentElement.getAttribute('data-theme') === 'light';
+            window.setTheme(isLight ? 'dark' : 'light');
+            var d = document.querySelector('.theme-icon-dark');
+            var l = document.querySelector('.theme-icon-light');
+            if (d) d.style.display = isLight ? 'inline' : 'none';
+            if (l) l.style.display = isLight ? 'none' : 'inline';
+        };
+        document.addEventListener('DOMContentLoaded', function() {
+            var isLight = localStorage.getItem('theme') === 'light';
+            var d = document.querySelector('.theme-icon-dark');
+            var l = document.querySelector('.theme-icon-light');
+            if (d) d.style.display = isLight ? 'none' : 'inline';
+            if (l) l.style.display = isLight ? 'inline' : 'none';
+        });
     </script>
     <link rel="stylesheet" href="bootstrap/bootstrap.min.css" />
-    <link rel="stylesheet" href="app.css" />
-    <link rel="stylesheet" href="SimpleOfficeScheduler.styles.css" />
+    <link rel="stylesheet" href="app.css?v=3" />
+    <link rel="stylesheet" href="SimpleOfficeScheduler.styles.css?v=3" />
     <link rel="icon" type="image/png" href="favicon.png" />
     <HeadOutlet />
 </head>

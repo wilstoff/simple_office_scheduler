@@ -63,15 +63,57 @@ public static class TimeZoneHelper
         return instant.InZone(zone).LocalDateTime.ToDateTimeUnspecified();
     }
 
+    // Well-known representative timezones (one per major region/offset)
+    private static readonly HashSet<string> CommonIds = new()
+    {
+        "Pacific/Honolulu",       // UTC-10
+        "America/Anchorage",      // UTC-9
+        "America/Los_Angeles",    // UTC-8 Pacific
+        "America/Denver",         // UTC-7 Mountain
+        "America/Chicago",        // UTC-6 Central
+        "America/New_York",       // UTC-5 Eastern
+        "America/Halifax",        // UTC-4 Atlantic
+        "America/Sao_Paulo",      // UTC-3
+        "Atlantic/South_Georgia", // UTC-2
+        "Atlantic/Azores",        // UTC-1
+        "Europe/London",          // UTC+0
+        "Europe/Paris",           // UTC+1
+        "Europe/Helsinki",        // UTC+2
+        "Europe/Moscow",          // UTC+3
+        "Asia/Dubai",             // UTC+4
+        "Asia/Karachi",           // UTC+5
+        "Asia/Kolkata",           // UTC+5:30
+        "Asia/Dhaka",             // UTC+6
+        "Asia/Bangkok",           // UTC+7
+        "Asia/Shanghai",          // UTC+8
+        "Asia/Tokyo",             // UTC+9
+        "Australia/Sydney",       // UTC+10/+11
+        "Pacific/Auckland",       // UTC+12/+13
+    };
+
     /// <summary>
-    /// Returns a list of IANA timezone choices for UI display, ordered by UTC offset.
+    /// Returns a short list of well-known representative timezones (one per major offset).
     /// </summary>
     public static List<(string Id, string DisplayName)> GetCommonTimeZones()
+    {
+        return GetTimeZoneList(commonOnly: true);
+    }
+
+    /// <summary>
+    /// Returns the full list of all IANA timezones for UI display.
+    /// </summary>
+    public static List<(string Id, string DisplayName)> GetAllTimeZones()
+    {
+        return GetTimeZoneList(commonOnly: false);
+    }
+
+    private static List<(string Id, string DisplayName)> GetTimeZoneList(bool commonOnly)
     {
         var now = SystemClock.Instance.GetCurrentInstant();
         return TzProvider.Ids
             .Select(id => TzProvider[id])
             .Where(tz => tz.Id.Contains("/")) // Filter out legacy/link IDs like "EST"
+            .Where(tz => !commonOnly || CommonIds.Contains(tz.Id))
             .Select(tz =>
             {
                 var offset = tz.GetUtcOffset(now);

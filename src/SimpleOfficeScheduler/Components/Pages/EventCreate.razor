@@ -57,6 +57,9 @@
                         <option value="@tz.Id">@tz.DisplayName</option>
                     }
                 </InputSelect>
+                <button type="button" class="btn btn-link btn-sm p-0 mt-1" style="font-size:0.8rem;" @onclick="ToggleAllTimeZones">
+                    @(_showAllTimeZones ? "Show fewer timezones" : "Show all timezones")
+                </button>
             </div>
 
             <div class="mb-3">
@@ -151,6 +154,24 @@
     private bool _isSubmitting;
     private bool _isEditMode => EventId.HasValue;
     private List<(string Id, string DisplayName)> _timeZones = new();
+    private bool _showAllTimeZones;
+
+    private void ToggleAllTimeZones()
+    {
+        _showAllTimeZones = !_showAllTimeZones;
+        var currentId = _model.TimeZoneId;
+        _timeZones = _showAllTimeZones
+            ? TimeZoneHelper.GetAllTimeZones()
+            : TimeZoneHelper.GetCommonTimeZones();
+
+        if (!string.IsNullOrEmpty(currentId) && !_timeZones.Any(tz => tz.Id == currentId))
+        {
+            var allZones = TimeZoneHelper.GetAllTimeZones();
+            var match = allZones.FirstOrDefault(tz => tz.Id == currentId);
+            if (match != default)
+                _timeZones.Insert(0, match);
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {

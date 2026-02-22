@@ -141,6 +141,9 @@ namespace SimpleOfficeScheduler.Migrations
                     b.Property<int>("EventOccurrenceId")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("Message")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime>("SignedUpAt")
                         .HasColumnType("TEXT");
 

@@ -1,6 +1,7 @@
 @inherits LayoutComponentBase
 @using Microsoft.AspNetCore.Components.Authorization
-@inject IJSRuntime JS
+@inject NavigationManager Navigation
+@implements IDisposable
 
 <div class="page">
     <div class="sidebar">
@@ -9,16 +10,12 @@
 
     <main>
         <div class="top-row px-4">
-            <button class="theme-toggle" @onclick="ToggleTheme"
-                    title="@(_isDark ? "Switch to light mode" : "Switch to dark mode")">
-                @if (_isDark)
-                {
-                    <span>&#9788;</span>
-                }
-                else
-                {
-                    <span>&#9790;</span>
-                }
+            <div class="page-title-area">
+                @(_pageTitle ?? "")
+            </div>
+            <button class="theme-toggle" onclick="window.toggleTheme()" title="Toggle theme">
+                <span class="theme-icon-dark">&#9788;</span>
+                <span class="theme-icon-light" style="display:none">&#9790;</span>
             </button>
             <AuthorizeView>
                 <Authorized>
@@ -44,29 +41,37 @@
 </div>
 
 @code {
-    private bool _isDark = true;
-    protected override async Task OnAfterRenderAsync(bool firstRender)
+    private string? _pageTitle;
+
+    protected override void OnInitialized()
     {
-        if (firstRender)
-        {
-            var theme = await JS.InvokeAsync<string?>("localStorage.getItem", "theme");
-            _isDark = theme != "light";
-            StateHasChanged();
-        }
+        Navigation.LocationChanged += OnLocationChanged;
+        UpdatePageTitle();
     }
 
-    private async Task ToggleTheme()
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
     {
-        _isDark = !_isDark;
-        var theme = _isDark ? "dark" : "light";
-        await JS.InvokeVoidAsync("localStorage.setItem", "theme", theme);
-        if (_isDark)
+        UpdatePageTitle();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void UpdatePageTitle()
+    {
+        var path = new Uri(Navigation.Uri).AbsolutePath.TrimStart('/').ToLowerInvariant();
+        _pageTitle = path switch
         {
-            await JS.InvokeVoidAsync("eval", "document.documentElement.removeAttribute('data-theme')");
-        }
-        else
-        {
-            await JS.InvokeVoidAsync("eval", "document.documentElement.setAttribute('data-theme','light')");
-        }
+            "" or "calendar" => "Calendar",
+            "events" => "Events",
+            "events/create" => "Create Event",
+            "dashboard" => "Dashboard",
+            "login" => "Login",
+            _ when path.StartsWith("events/") => "Event Details",
+            _ => ""
+        };
+    }
+
+    public void Dispose()
+    {
+        Navigation.LocationChanged -= OnLocationChanged;
     }
 }
