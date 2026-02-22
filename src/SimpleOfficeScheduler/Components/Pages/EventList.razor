@@ -22,11 +22,21 @@
 
 @if (_events is null)
 {
-    <p>Loading...</p>
+    <div class="d-flex align-items-center gap-2 py-4">
+        <span class="spinner-border spinner-border-sm text-primary"></span>
+        <span class="text-muted">Loading events...</span>
+    </div>
 }
 else if (!_events.Any())
 {
-    <p>No events found.</p>
+    <div class="text-center py-5">
+        <div class="text-muted mb-2" style="font-size: 2.5rem;">&#128197;</div>
+        <p class="text-muted mb-0">@(string.IsNullOrEmpty(_searchTerm) ? "No events yet." : "No events match your search.")</p>
+        @if (string.IsNullOrEmpty(_searchTerm))
+        {
+            <a href="events/create" class="btn btn-primary btn-sm mt-3">Create your first event</a>
+        }
+    </div>
 }
 else
 {

@@ -1,0 +1,14 @@
+**/bin/
+**/obj/
+**/node_modules/
+**/.vs/
+**/.vscode/
+**/.claude/
+**/test-results/
+**/*.db
+**/*.user
+**/Thumbs.db
+.git/
+.gitignore
+README.md
+CLAUDE.md
