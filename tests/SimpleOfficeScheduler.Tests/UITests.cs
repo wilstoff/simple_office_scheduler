@@ -647,6 +647,44 @@ public class UITests : IClassFixture<PlaywrightWebAppFixture>, IAsyncLifetime
             $"Logo center ({logoCenter:F1}) should be within 8px of sidebar center ({sidebarCenter:F1}), diff = {Math.Abs(sidebarCenter - logoCenter):F1}px");
     }
 
+    [Fact]
+    public async Task Expanded_Sidebar_Brand_Has_Left_Padding()
+    {
+        await _page.GotoAsync($"{_fixture.BaseUrl}/");
+        await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+
+        // Wait for sidebar to be in collapsed state
+        await _page.WaitForFunctionAsync(
+            "() => { var el = document.querySelector('.sidebar'); return el && el.getBoundingClientRect().width < 200; }",
+            null, new() { Timeout = 10000 });
+
+        // Hover to expand
+        await _page.Locator(".sidebar").HoverAsync();
+        await _page.WaitForTimeoutAsync(400);
+
+        var sidebar = _page.Locator(".sidebar");
+        var sidebarBox = await sidebar.BoundingBoxAsync();
+        Assert.NotNull(sidebarBox);
+
+        // Check brand logo has at least 8px left padding from sidebar edge
+        var logo = _page.Locator(".brand-logo");
+        var logoBox = await logo.BoundingBoxAsync();
+        Assert.NotNull(logoBox);
+        var logoLeftGap = logoBox.X - sidebarBox.X;
+        Assert.True(
+            logoLeftGap >= 8,
+            $"Brand logo should have left padding (gap={logoLeftGap:F1}px, expected >= 8px)");
+
+        // Check the "Office Scheduler" label is fully visible (not clipped)
+        var brandLabel = _page.Locator(".navbar-brand .nav-label");
+        var labelBox = await brandLabel.BoundingBoxAsync();
+        Assert.NotNull(labelBox);
+        var labelLeftGap = labelBox.X - sidebarBox.X;
+        Assert.True(
+            labelLeftGap >= 8,
+            $"Brand label should have left padding (gap={labelLeftGap:F1}px, expected >= 8px)");
+    }
+
     // ===== TDD TESTS: Light Mode Sidebar (Req 3) =====
 
     [Fact]

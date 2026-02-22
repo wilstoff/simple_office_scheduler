@@ -559,10 +559,11 @@ h1:focus {
         margin-right: 0.75rem;
     }
 
-    .sidebar:hover .navbar-brand {
+    .sidebar:hover .top-row .navbar-brand {
         justify-content: flex-start;
         width: auto;
         overflow: visible;
+        padding-left: 0.75rem;
     }
 }
 
