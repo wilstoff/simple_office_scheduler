@@ -22,7 +22,9 @@ namespace SimpleOfficeScheduler.Migrations
                     Email = table.Column<string>(type: "TEXT", maxLength: 256, nullable: false),
                     PasswordHash = table.Column<string>(type: "TEXT", nullable: true),
                     IsLocalAccount = table.Column<bool>(type: "INTEGER", nullable: false),
-                    CreatedAt = table.Column<DateTime>(type: "TEXT", nullable: false)
+                    CreatedAt = table.Column<DateTime>(type: "TEXT", nullable: false),
+                    ThemePreference = table.Column<string>(type: "TEXT", maxLength: 10, nullable: false, defaultValue: "dark"),
+                    TimeZonePreference = table.Column<string>(type: "TEXT", maxLength: 100, nullable: true)
                 },
                 constraints: table =>
                 {

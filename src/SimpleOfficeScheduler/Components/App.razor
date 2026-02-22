@@ -1,5 +1,12 @@
+@inject IHttpContextAccessor HttpContextAccessor
+
+@{
+    var themePreference = HttpContextAccessor.HttpContext?.User?.FindFirst("ThemePreference")?.Value;
+    var isLight = themePreference == "light";
+}
+
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" @(isLight ? "data-theme=\"light\"" : "")>
 
 <head>
     <meta charset="utf-8" />
@@ -7,8 +14,16 @@
     <base href="/" />
     <script>
         (function() {
-            var t = localStorage.getItem('theme');
-            if (t === 'light') document.documentElement.setAttribute('data-theme', 'light');
+            // Server rendered the data-theme attribute from DB.
+            // Sync localStorage to match.
+            var serverTheme = document.documentElement.getAttribute('data-theme');
+            if (serverTheme === 'light') {
+                localStorage.setItem('theme', 'light');
+            } else {
+                // Check localStorage as fallback (for anonymous/pre-login)
+                var t = localStorage.getItem('theme');
+                if (t === 'light') document.documentElement.setAttribute('data-theme', 'light');
+            }
         })();
         window.setTheme = function(theme) {
             if (theme === 'light') {
@@ -17,6 +32,12 @@
                 document.documentElement.removeAttribute('data-theme');
             }
             localStorage.setItem('theme', theme);
+            // Persist to DB (best-effort)
+            fetch('/api/user/settings/theme', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ theme: theme })
+            }).catch(function() {});
         };
         window.toggleTheme = function() {
             var isLight = document.documentElement.getAttribute('data-theme') === 'light';
@@ -27,7 +48,7 @@
             if (l) l.style.display = isLight ? 'none' : 'inline';
         };
         document.addEventListener('DOMContentLoaded', function() {
-            var isLight = localStorage.getItem('theme') === 'light';
+            var isLight = document.documentElement.getAttribute('data-theme') === 'light';
             var d = document.querySelector('.theme-icon-dark');
             var l = document.querySelector('.theme-icon-light');
             if (d) d.style.display = isLight ? 'none' : 'inline';
@@ -35,8 +56,8 @@
         });
     </script>
     <link rel="stylesheet" href="bootstrap/bootstrap.min.css" />
-    <link rel="stylesheet" href="app.css?v=3" />
-    <link rel="stylesheet" href="SimpleOfficeScheduler.styles.css?v=3" />
+    <link rel="stylesheet" href="app.css?v=4" />
+    <link rel="stylesheet" href="SimpleOfficeScheduler.styles.css?v=4" />
     <link rel="icon" type="image/png" href="favicon.png" />
     <HeadOutlet />
 </head>

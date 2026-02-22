@@ -92,10 +92,26 @@ function createAndRenderCalendar(
                 detailText = owner ? `${cap} · ${owner}` : cap;
             }
 
+            // Show event times in monthly view
+            let timeHtml = '';
+            if (arg.view.type === 'dayGridMonth' && arg.event.start) {
+                const fmt = (d: Date): string => {
+                    let h = d.getHours();
+                    const m = d.getMinutes();
+                    const ap = h >= 12 ? 'p' : 'a';
+                    h = h % 12 || 12;
+                    return m > 0 ? `${h}:${m.toString().padStart(2, '0')}${ap}` : `${h}${ap}`;
+                };
+                const s = fmt(arg.event.start);
+                const e = arg.event.end ? fmt(arg.event.end) : '';
+                timeHtml = `<div style="font-size:0.75em;opacity:0.85;">${s}${e ? ' - ' + e : ''}</div>`;
+            }
+
             return {
                 html: `
                     <div style="padding: 2px 4px; overflow: hidden; height: 100%;">
                         <div style="font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${arg.event.title}</div>
+                        ${timeHtml}
                         <div style="font-size: 0.75em; opacity: 0.85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${detailText}</div>
                     </div>
                 `

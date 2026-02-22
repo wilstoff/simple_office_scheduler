@@ -19,7 +19,17 @@
             </button>
             <AuthorizeView>
                 <Authorized>
-                    <span class="me-3">@context.User.FindFirst("DisplayName")?.Value</span>
+                    @{
+                        var displayName = context.User.FindFirst("DisplayName")?.Value ?? "User";
+                        var userIdStr = context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+                        var userId = int.TryParse(userIdStr, out var uid) ? uid : 0;
+                        var initials = GetInitials(displayName);
+                        var avatarColor = GetAvatarColor(userId);
+                    }
+                    <a href="settings" class="user-link me-3">
+                        <div class="user-avatar-sm" style="background-color: @avatarColor;">@initials</div>
+                        <span>@displayName</span>
+                    </a>
                     <a href="logout">Logout</a>
                 </Authorized>
                 <NotAuthorized>
@@ -63,7 +73,7 @@
             "" or "calendar" => "Calendar",
             "events" => "Events",
             "events/create" => "Create Event",
-            "dashboard" => "Dashboard",
+            "settings" => "Settings",
             "login" => "Login",
             _ when path.StartsWith("events/") => "Event Details",
             _ => ""
@@ -73,5 +83,25 @@
     public void Dispose()
     {
         Navigation.LocationChanged -= OnLocationChanged;
+    }
+
+    private static readonly string[] AvatarColors = new[]
+    {
+        "#e74c3c", "#e67e22", "#f1c40f", "#2ecc71", "#1abc9c",
+        "#3498db", "#9b59b6", "#e91e63", "#00bcd4", "#ff5722",
+        "#795548", "#607d8b", "#8bc34a", "#673ab7", "#009688"
+    };
+
+    private static string GetInitials(string name)
+    {
+        var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length >= 2
+            ? $"{parts[0][0]}{parts[^1][0]}".ToUpperInvariant()
+            : (parts.Length == 1 ? parts[0][0..Math.Min(2, parts[0].Length)].ToUpperInvariant() : "?");
+    }
+
+    private static string GetAvatarColor(int userId)
+    {
+        return AvatarColors[Math.Abs(userId) % AvatarColors.Length];
     }
 }

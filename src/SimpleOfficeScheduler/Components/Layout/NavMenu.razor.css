@@ -20,13 +20,14 @@
     background-color: rgba(0,0,0,0.4);
 }
 
-.navbar-brand {
+.top-row ::deep .navbar-brand {
     font-size: 1.1rem;
     white-space: nowrap;
     display: flex;
     align-items: center;
     gap: 0.6rem;
     padding-left: 0.75rem;
+    color: var(--sidebar-text, #d7d7d7);
 }
 
 .brand-logo {
@@ -44,6 +45,7 @@
     top: -1px;
     background-size: cover;
     flex-shrink: 0;
+    filter: var(--sidebar-icon-filter, none);
 }
 
 .bi-house-door-fill-nav-menu {
@@ -93,12 +95,12 @@
 
 .nav-item ::deep a.active {
     background-color: var(--sidebar-active-bg, rgba(255,255,255,0.37));
-    color: white;
+    color: var(--sidebar-active-text, white);
 }
 
 .nav-item ::deep .nav-link:hover {
     background-color: var(--sidebar-hover-bg, rgba(255,255,255,0.1));
-    color: white;
+    color: var(--sidebar-active-text, white);
 }
 
 .nav-label {
@@ -149,11 +151,18 @@
         display: none;
     }
 
+    /* Remove Bootstrap navbar padding so brand can center */
+    .top-row {
+        padding: 0;
+    }
+
     /* Center brand logo in collapsed state */
-    .navbar-brand {
+    .top-row ::deep .navbar-brand {
         justify-content: center;
-        width: 48px;
+        width: 72px;
         overflow: hidden;
-        margin: 0 auto;
+        margin: 0;
+        padding-left: 0;
+        padding-right: 0;
     }
 }

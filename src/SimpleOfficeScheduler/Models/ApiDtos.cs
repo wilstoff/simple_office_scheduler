@@ -87,4 +87,25 @@ public class UserResponse
     public string Username { get; set; } = string.Empty;
     public string DisplayName { get; set; } = string.Empty;
     public string Email { get; set; } = string.Empty;
+    public string ThemePreference { get; set; } = "dark";
+    public string? TimeZonePreference { get; set; }
+}
+
+public class UserSettingsResponse
+{
+    public string ThemePreference { get; set; } = "dark";
+    public string? TimeZonePreference { get; set; }
+    public string DisplayName { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+    public bool IsLocalAccount { get; set; }
+}
+
+public class UpdateThemeRequest
+{
+    public string Theme { get; set; } = "dark";
+}
+
+public class UpdateTimezoneRequest
+{
+    public string TimeZoneId { get; set; } = string.Empty;
 }

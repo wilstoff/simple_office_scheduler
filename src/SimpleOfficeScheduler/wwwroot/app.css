@@ -11,7 +11,10 @@
     --sidebar-bg: linear-gradient(180deg, #0d1117 0%, #151d2e 50%, #1a2332 100%);
     --sidebar-text: #8b9cb6;
     --sidebar-active-bg: rgba(59, 130, 246, 0.25);
+    --sidebar-active-text: white;
     --sidebar-hover-bg: rgba(255, 255, 255, 0.06);
+    --sidebar-border-right: none;
+    --sidebar-icon-filter: none;
 
     /* Top bar */
     --topbar-bg: #161e2e;
@@ -90,10 +93,13 @@
     --bg-surface-hover: #f1f5f9;
     --bg-elevated: #ffffff;
 
-    --sidebar-bg: linear-gradient(180deg, #0f172a 0%, #1e3a5f 70%);
-    --sidebar-text: #d7d7d7;
-    --sidebar-active-bg: rgba(255, 255, 255, 0.37);
-    --sidebar-hover-bg: rgba(255, 255, 255, 0.1);
+    --sidebar-bg: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+    --sidebar-text: #475569;
+    --sidebar-active-bg: rgba(27, 110, 194, 0.12);
+    --sidebar-active-text: #1e293b;
+    --sidebar-hover-bg: rgba(0, 0, 0, 0.04);
+    --sidebar-border-right: 1px solid #e2e8f0;
+    --sidebar-icon-filter: brightness(0) saturate(100%) invert(30%) sepia(10%) saturate(800%) hue-rotate(180deg);
 
     --topbar-bg: #f7f7f7;
     --topbar-border: #d6d5d5;
@@ -576,4 +582,44 @@ h1:focus {
 
 ::-webkit-scrollbar-thumb:hover {
     background: var(--text-muted);
+}
+
+/* ===== AVATAR ===== */
+.user-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: white;
+}
+
+.user-avatar-sm {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: 0.7rem;
+    color: white;
+    flex-shrink: 0;
+}
+
+.user-link {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    text-decoration: none;
+    color: var(--topbar-text);
+    cursor: pointer;
+}
+
+.user-link:hover {
+    color: var(--accent-primary);
+    text-decoration: none;
 }

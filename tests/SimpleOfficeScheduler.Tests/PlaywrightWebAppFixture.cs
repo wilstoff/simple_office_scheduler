@@ -137,6 +137,20 @@ public class PlaywrightWebAppFixture : IAsyncLifetime
             await db.SaveChangesAsync();
         }
 
+        if (!await db.Users.AnyAsync(u => u.Username == "testuser2"))
+        {
+            db.Users.Add(new AppUser
+            {
+                Username = "testuser2",
+                DisplayName = "Test User Two",
+                Email = "testuser2@test.local",
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword("Test123!"),
+                IsLocalAccount = true,
+                CreatedAt = SystemClock.Instance.GetCurrentInstant()
+            });
+            await db.SaveChangesAsync();
+        }
+
         // Initialize Playwright
         _playwright = await Playwright.CreateAsync();
         _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions

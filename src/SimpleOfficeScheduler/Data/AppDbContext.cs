@@ -40,6 +40,8 @@ public class AppDbContext : DbContext
             entity.Property(e => e.Username).HasMaxLength(256);
             entity.Property(e => e.DisplayName).HasMaxLength(256);
             entity.Property(e => e.Email).HasMaxLength(256);
+            entity.Property(e => e.ThemePreference).HasMaxLength(10).HasDefaultValue("dark");
+            entity.Property(e => e.TimeZonePreference).HasMaxLength(100).IsRequired(false);
         });
 
         // Event

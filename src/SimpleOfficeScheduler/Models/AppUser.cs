@@ -11,6 +11,8 @@ public class AppUser
     public string? PasswordHash { get; set; }
     public bool IsLocalAccount { get; set; }
     public Instant CreatedAt { get; set; }
+    public string ThemePreference { get; set; } = "dark";
+    public string? TimeZonePreference { get; set; }
 
     public ICollection<Event> OwnedEvents { get; set; } = new List<Event>();
     public ICollection<EventSignup> Signups { get; set; } = new List<EventSignup>();

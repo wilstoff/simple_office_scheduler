@@ -3,6 +3,7 @@
 @inject IEventService EventService
 @inject AuthenticationStateProvider AuthStateProvider
 @inject IJSRuntime JS
+@inject SimpleOfficeScheduler.Data.AppDbContext Db
 @rendermode InteractiveServer
 
 <div class="side-panel-overlay @(IsVisible ? "show" : "")" @onclick="Close"
@@ -198,20 +199,34 @@
             }
             else
             {
-                // Detect the user's browser timezone via JS interop
-                string browserTz;
-                try
+                // Timezone cascade: DB preference > browser > server
+                string? userTzPref = null;
+                var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+                var uidClaim = authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
+                if (uidClaim is not null && int.TryParse(uidClaim.Value, out var uid))
                 {
-                    browserTz = await JS.InvokeAsync<string>("eval",
-                        "Intl.DateTimeFormat().resolvedOptions().timeZone");
-                }
-                catch
-                {
-                    browserTz = TimeZoneHelper.GetLocalTimeZoneId();
+                    var user = await Db.Users.FindAsync(uid);
+                    userTzPref = user?.TimeZonePreference;
                 }
 
-                // Validate the browser timezone is a known IANA ID, fallback to server default
-                var resolvedTz = TimeZoneHelper.ResolveTimeZoneId(browserTz);
+                string resolvedTz;
+                if (!string.IsNullOrEmpty(userTzPref) && TimeZoneHelper.IsValidTimeZoneId(userTzPref))
+                {
+                    resolvedTz = userTzPref;
+                }
+                else
+                {
+                    try
+                    {
+                        var browserTz = await JS.InvokeAsync<string>("eval",
+                            "Intl.DateTimeFormat().resolvedOptions().timeZone");
+                        resolvedTz = TimeZoneHelper.ResolveTimeZoneId(browserTz);
+                    }
+                    catch
+                    {
+                        resolvedTz = TimeZoneHelper.GetLocalTimeZoneId();
+                    }
+                }
 
                 _model = new EventFormModel
                 {
@@ -220,7 +235,7 @@
                     TimeZoneId = resolvedTz
                 };
 
-                // Ensure the browser timezone appears in the dropdown even if not in the common list
+                // Ensure the timezone appears in the dropdown even if not in the common list
                 if (!_timeZones.Any(tz => tz.Id == resolvedTz))
                 {
                     var allZones = TimeZoneHelper.GetAllTimeZones();

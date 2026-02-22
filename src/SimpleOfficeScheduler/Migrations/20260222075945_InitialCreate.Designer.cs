@@ -11,7 +11,7 @@ using SimpleOfficeScheduler.Data;
 namespace SimpleOfficeScheduler.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20260222003946_InitialCreate")]
+    [Migration("20260222075945_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />
@@ -43,6 +43,17 @@ namespace SimpleOfficeScheduler.Migrations
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("PasswordHash")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ThemePreference")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(10)
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("dark");
+
+                    b.Property<string>("TimeZonePreference")
+                        .HasMaxLength(100)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Username")

@@ -442,7 +442,7 @@ public class UITests : IClassFixture<PlaywrightWebAppFixture>, IAsyncLifetime
         // 1. Events → Calendar link          (standard return)
         // 2. Events → Office Scheduler brand (return via brand from different page)
         // 3. Events → Calendar → brand       (brand click while already on calendar)
-        // 4. Dashboard → brand               (return via brand from dashboard)
+        // 4. Create Event → brand              (return via brand from create event)
         // 5. Events → brand → Events → Calendar (rapid multi-hop)
         // 6. Calendar → brand → brand        (double brand click on same page)
         for (var round = 0; round < 30; round++)
@@ -475,11 +475,11 @@ public class UITests : IClassFixture<PlaywrightWebAppFixture>, IAsyncLifetime
                     await AssertCalendarFullyRendered($"{label}: Events → Calendar → brand");
                     break;
 
-                case 3: // Dashboard → brand
-                    await ClickNavLink("Dashboard");
+                case 3: // Create Event → brand
+                    await ClickNavLink("Create Event");
                     await ClickBrandLink();
                     await _page.WaitForSelectorAsync(".fc-view", new() { Timeout = 10000 });
-                    await AssertCalendarFullyRendered($"{label}: Dashboard → brand");
+                    await AssertCalendarFullyRendered($"{label}: Create Event → brand");
                     break;
 
                 case 4: // Events → brand → Events → Calendar (rapid multi-hop)
@@ -577,5 +577,232 @@ public class UITests : IClassFixture<PlaywrightWebAppFixture>, IAsyncLifetime
             await _page.WaitForSelectorAsync(".fc-view", new() { Timeout = 10000 });
             await AssertCalendarFullyRendered($"Calendar-brand alternation {i}b");
         }
+    }
+
+    // ===== TDD TESTS: Theme Persistence (Req 1) =====
+
+    [Fact]
+    public async Task Theme_Persists_Across_Page_Navigation_Via_DB()
+    {
+        await _page.GotoAsync($"{_fixture.BaseUrl}/");
+        await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+
+        // Toggle to light theme
+        await _page.Locator(".theme-toggle").ClickAsync();
+        await _page.WaitForFunctionAsync(
+            "() => document.documentElement.getAttribute('data-theme') === 'light'",
+            null, new() { Timeout = 3000 });
+
+        // Wait for DB save to complete
+        await _page.WaitForTimeoutAsync(500);
+
+        // Navigate to Events page
+        await _page.Locator(".sidebar").HoverAsync();
+        await _page.WaitForTimeoutAsync(300);
+        await _page.Locator(".nav-link", new() { HasText = "Events" }).ClickAsync();
+        await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+
+        // Theme should still be light after navigation
+        var theme = await _page.EvaluateAsync<string?>(
+            "document.documentElement.getAttribute('data-theme')");
+        Assert.Equal("light", theme);
+
+        // Navigate back to calendar
+        await _page.Locator(".sidebar").HoverAsync();
+        await _page.WaitForTimeoutAsync(300);
+        await _page.Locator(".nav-link", new() { HasText = "Calendar" }).ClickAsync();
+        await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+
+        // Theme should still persist
+        var themeAfterReturn = await _page.EvaluateAsync<string?>(
+            "document.documentElement.getAttribute('data-theme')");
+        Assert.Equal("light", themeAfterReturn);
+    }
+
+    // ===== TDD TESTS: Logo Alignment (Req 2) =====
+
+    [Fact]
+    public async Task Brand_Logo_Is_Centered_In_Collapsed_Sidebar()
+    {
+        await _page.GotoAsync($"{_fixture.BaseUrl}/");
+        await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+
+        await _page.WaitForFunctionAsync(
+            "() => { var el = document.querySelector('.sidebar'); return el && el.getBoundingClientRect().width < 200; }",
+            null, new() { Timeout = 10000 });
+
+        var sidebar = _page.Locator(".sidebar");
+        var sidebarBox = await sidebar.BoundingBoxAsync();
+        Assert.NotNull(sidebarBox);
+
+        var logo = _page.Locator(".brand-logo");
+        var logoBox = await logo.BoundingBoxAsync();
+        Assert.NotNull(logoBox);
+
+        var sidebarCenter = sidebarBox.X + sidebarBox.Width / 2;
+        var logoCenter = logoBox.X + logoBox.Width / 2;
+
+        Assert.True(
+            Math.Abs(sidebarCenter - logoCenter) < 8,
+            $"Logo center ({logoCenter:F1}) should be within 8px of sidebar center ({sidebarCenter:F1}), diff = {Math.Abs(sidebarCenter - logoCenter):F1}px");
+    }
+
+    // ===== TDD TESTS: Light Mode Sidebar (Req 3) =====
+
+    [Fact]
+    public async Task Sidebar_Has_Light_Background_In_Light_Mode()
+    {
+        await _page.GotoAsync($"{_fixture.BaseUrl}/");
+        await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+
+        // Switch to light mode
+        await _page.Locator(".theme-toggle").ClickAsync();
+        await _page.WaitForFunctionAsync(
+            "() => document.documentElement.getAttribute('data-theme') === 'light'",
+            null, new() { Timeout = 3000 });
+
+        // Sidebar should be visible
+        var sidebar = _page.Locator(".sidebar");
+        await Assertions.Expect(sidebar).ToBeVisibleAsync();
+
+        // Check sidebar background is light (not the dark gradient)
+        var sidebarBg = await sidebar.EvaluateAsync<string>(
+            "el => getComputedStyle(el).backgroundImage");
+
+        // Should NOT contain the dark colors (#0f172a, #1e3a5f, #0d1117, #151d2e)
+        Assert.DoesNotContain("15, 23, 42", sidebarBg); // rgb for #0f172a
+        Assert.DoesNotContain("30, 58, 95", sidebarBg); // rgb for #1e3a5f
+
+        // Nav items should still be visible and centered
+        var navLink = _page.Locator(".nav-item .nav-link .bi").First;
+        await Assertions.Expect(navLink).ToBeVisibleAsync();
+
+        var sidebarBox = await sidebar.BoundingBoxAsync();
+        var iconBox = await navLink.BoundingBoxAsync();
+        Assert.NotNull(sidebarBox);
+        Assert.NotNull(iconBox);
+
+        var sidebarCenter = sidebarBox.X + sidebarBox.Width / 2;
+        var iconCenter = iconBox.X + iconBox.Width / 2;
+        Assert.True(
+            Math.Abs(sidebarCenter - iconCenter) < 8,
+            $"Light mode: Icon center ({iconCenter:F1}) should be within 8px of sidebar center ({sidebarCenter:F1})");
+    }
+
+    // ===== TDD TESTS: EventCreate Timezone Default (Req 4) =====
+
+    [Fact]
+    public async Task EventCreate_Defaults_To_User_Timezone_Preference()
+    {
+        await _page.GotoAsync($"{_fixture.BaseUrl}/");
+        await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+
+        // Set user's timezone preference via API
+        await _page.EvaluateAsync(@"
+            fetch('/api/user/settings/timezone', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ timeZoneId: 'America/New_York' })
+            })
+        ");
+        await _page.WaitForTimeoutAsync(500);
+
+        // Navigate to create event page
+        await _page.GotoAsync($"{_fixture.BaseUrl}/events/create");
+        await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await _page.WaitForTimeoutAsync(1000);
+
+        // Check the timezone select value
+        var tzValue = await _page.Locator("#timeZone").InputValueAsync();
+        Assert.Equal("America/New_York", tzValue);
+    }
+
+    // ===== TDD TESTS: User Settings Page (Req 6) =====
+
+    [Fact]
+    public async Task User_Settings_Page_Shows_Avatar_And_Preferences()
+    {
+        await _page.GotoAsync($"{_fixture.BaseUrl}/");
+        await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+
+        // Click the user link in top bar
+        var userLink = _page.Locator(".user-link");
+        await Assertions.Expect(userLink).ToBeVisibleAsync();
+        await userLink.ClickAsync();
+        await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+
+        // Should be on settings page
+        Assert.Contains("settings", _page.Url.ToLower());
+
+        // Avatar should be visible with initials "TA" for "Test Admin"
+        var avatar = _page.Locator(".user-avatar").First;
+        await Assertions.Expect(avatar).ToBeVisibleAsync();
+        var avatarText = await avatar.TextContentAsync();
+        Assert.Equal("TA", avatarText?.Trim());
+
+        // Theme controls should be visible
+        var darkBtn = _page.Locator("button", new() { HasText = "Dark" });
+        var lightBtn = _page.Locator("button", new() { HasText = "Light" });
+        await Assertions.Expect(darkBtn).ToBeVisibleAsync();
+        await Assertions.Expect(lightBtn).ToBeVisibleAsync();
+
+        // Timezone select should be visible
+        var tzSelect = _page.Locator("select.form-select");
+        await Assertions.Expect(tzSelect).ToBeVisibleAsync();
+    }
+
+    [Fact]
+    public async Task User_Settings_Timezone_Persists_After_Reload()
+    {
+        await _page.GotoAsync($"{_fixture.BaseUrl}/settings");
+        await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await _page.WaitForTimeoutAsync(1000);
+
+        // Select a timezone
+        var tzSelect = _page.Locator("select.form-select");
+        await tzSelect.SelectOptionAsync("America/Chicago");
+        await _page.WaitForTimeoutAsync(500);
+
+        // Reload the page
+        await _page.ReloadAsync();
+        await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await _page.WaitForTimeoutAsync(1000);
+
+        // Timezone should still be selected
+        var selectedTz = await _page.Locator("select.form-select").InputValueAsync();
+        Assert.Equal("America/Chicago", selectedTz);
+    }
+
+    // ===== TDD TESTS: Monthly View Event Times (Req 9) =====
+
+    [Fact]
+    public async Task Monthly_View_Shows_Event_Times()
+    {
+        // Create an event via API
+        var apiContext = await _fixture.Browser.NewContextAsync();
+        var apiPage = await apiContext.NewPageAsync();
+        await LoginOnPage(apiPage);
+        var today = DateTime.Now.Date;
+        await CreateEventViaApi(apiPage, "Monthly Time Test", today.AddHours(9), today.AddHours(10));
+        await apiContext.DisposeAsync();
+
+        // Navigate to calendar
+        await _page.GotoAsync($"{_fixture.BaseUrl}/");
+        await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await _page.WaitForSelectorAsync(".fc-view", new() { Timeout = 10000 });
+
+        // Switch to monthly view
+        var monthButton = _page.Locator(".fc-dayGridMonth-button");
+        await monthButton.ClickAsync();
+        await _page.WaitForTimeoutAsync(1000);
+
+        // Find events in the monthly view
+        var events = _page.Locator(".fc-daygrid-event");
+        var eventCount = await events.CountAsync();
+        Assert.True(eventCount > 0, "Expected at least one event in monthly view");
+
+        // Check that the event shows a time string (e.g., "9:00a" or "9a")
+        var eventHtml = await events.First.InnerHTMLAsync();
+        Assert.Matches(@"\d{1,2}(:\d{2})?[ap]", eventHtml);
     }
 }

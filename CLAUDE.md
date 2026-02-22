@@ -1,0 +1,1 @@
+Use Test Driven Development when adding new functionality or altering expected functionality.  You must run the test before implementing the feature or functionality change to ensure the test actually fails.

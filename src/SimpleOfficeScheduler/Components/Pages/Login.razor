@@ -54,7 +54,8 @@
                 new(ClaimTypes.NameIdentifier, result.User.Id.ToString()),
                 new(ClaimTypes.Name, result.User.Username),
                 new("DisplayName", result.User.DisplayName),
-                new(ClaimTypes.Email, result.User.Email)
+                new(ClaimTypes.Email, result.User.Email),
+                new("ThemePreference", result.User.ThemePreference)
             };
 
             var identity = new ClaimsIdentity(claims, "Cookies");

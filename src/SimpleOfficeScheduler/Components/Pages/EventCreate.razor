@@ -6,6 +6,8 @@
 @inject IEventService EventService
 @inject AuthenticationStateProvider AuthStateProvider
 @inject NavigationManager Navigation
+@inject IJSRuntime JS
+@inject SimpleOfficeScheduler.Data.AppDbContext Db
 @rendermode InteractiveServer
 
 <PageTitle>@(_isEditMode ? "Edit Event" : "Create Event") - Office Scheduler</PageTitle>
@@ -205,7 +207,34 @@
         {
             _model.StartTime = DateTime.Now.Date.AddDays(1).AddHours(9);
             _model.EndTime = DateTime.Now.Date.AddDays(1).AddHours(10);
-            _model.TimeZoneId = TimeZoneHelper.GetLocalTimeZoneId();
+
+            // Timezone cascade: DB preference > browser > server
+            string? userTzPref = null;
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var uidClaim = authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
+            if (uidClaim is not null && int.TryParse(uidClaim.Value, out var uid))
+            {
+                var user = await Db.Users.FindAsync(uid);
+                userTzPref = user?.TimeZonePreference;
+            }
+
+            if (!string.IsNullOrEmpty(userTzPref) && TimeZoneHelper.IsValidTimeZoneId(userTzPref))
+            {
+                _model.TimeZoneId = userTzPref;
+            }
+            else
+            {
+                try
+                {
+                    var browserTz = await JS.InvokeAsync<string>("eval",
+                        "Intl.DateTimeFormat().resolvedOptions().timeZone");
+                    _model.TimeZoneId = TimeZoneHelper.ResolveTimeZoneId(browserTz);
+                }
+                catch
+                {
+                    _model.TimeZoneId = TimeZoneHelper.GetLocalTimeZoneId();
+                }
+            }
         }
     }
 

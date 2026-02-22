@@ -1,0 +1,189 @@
+@page "/settings"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using SimpleOfficeScheduler.Services
+@inject AuthenticationStateProvider AuthStateProvider
+@inject SimpleOfficeScheduler.Data.AppDbContext Db
+@inject IJSRuntime JS
+@inject NavigationManager Navigation
+@rendermode InteractiveServer
+
+<PageTitle>Settings - Office Scheduler</PageTitle>
+
+<h3>User Settings</h3>
+
+@if (_loading)
+{
+    <p>Loading...</p>
+}
+else
+{
+    <div class="row">
+        <div class="col-md-8 col-lg-6">
+            <div class="card mb-4">
+                <div class="card-body d-flex align-items-center gap-3">
+                    <div class="user-avatar" style="background-color: @_avatarColor; width: 56px; height: 56px; font-size: 1.2rem;">
+                        @_initials
+                    </div>
+                    <div>
+                        <h5 class="mb-1">@_displayName</h5>
+                        <small class="text-muted">@_email</small>
+                        @if (!_isLocalAccount)
+                        {
+                            <br /><span class="badge" style="background-color: var(--badge-info-bg);">Active Directory</span>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-body">
+                    <h5 class="card-title">Appearance</h5>
+                    <label class="form-label">Theme</label>
+                    <div class="d-flex gap-2">
+                        <button class="btn @(_theme == "dark" ? "btn-primary" : "btn-secondary")"
+                                @onclick='() => SetTheme("dark")'>
+                            &#9788; Dark
+                        </button>
+                        <button class="btn @(_theme == "light" ? "btn-primary" : "btn-secondary")"
+                                @onclick='() => SetTheme("light")'>
+                            &#9790; Light
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-body">
+                    <h5 class="card-title">Timezone</h5>
+                    <label class="form-label">Default timezone for new events</label>
+                    <select class="form-select" value="@_timeZoneId" @onchange="OnTimezoneChanged">
+                        @foreach (var tz in _timeZones)
+                        {
+                            <option value="@tz.Id">@tz.DisplayName</option>
+                        }
+                    </select>
+                    <button type="button" class="btn btn-link btn-sm p-0 mt-1" style="font-size:0.8rem;" @onclick="ToggleAllTimeZones">
+                        @(_showAllTimeZones ? "Show fewer timezones" : "Show all timezones")
+                    </button>
+                    @if (_timezoneSaved)
+                    {
+                        <div class="text-success small mt-1">Timezone saved.</div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool _loading = true;
+    private string _displayName = "";
+    private string _email = "";
+    private string _initials = "";
+    private string _avatarColor = "#3498db";
+    private bool _isLocalAccount = true;
+    private string _theme = "dark";
+    private string _timeZoneId = "";
+    private List<(string Id, string DisplayName)> _timeZones = new();
+    private bool _showAllTimeZones;
+    private bool _timezoneSaved;
+    private int _userId;
+
+    private static readonly string[] AvatarColors = new[]
+    {
+        "#e74c3c", "#e67e22", "#f1c40f", "#2ecc71", "#1abc9c",
+        "#3498db", "#9b59b6", "#e91e63", "#00bcd4", "#ff5722",
+        "#795548", "#607d8b", "#8bc34a", "#673ab7", "#009688"
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        _timeZones = TimeZoneHelper.GetCommonTimeZones();
+
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var uidClaim = authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
+        if (uidClaim is null || !int.TryParse(uidClaim.Value, out _userId))
+        {
+            Navigation.NavigateTo("login");
+            return;
+        }
+
+        var user = await Db.Users.FindAsync(_userId);
+        if (user is null)
+        {
+            Navigation.NavigateTo("login");
+            return;
+        }
+
+        _displayName = user.DisplayName ?? user.Username;
+        _email = user.Email ?? "";
+        _isLocalAccount = user.IsLocalAccount;
+        _theme = user.ThemePreference;
+        _timeZoneId = user.TimeZonePreference ?? TimeZoneHelper.GetLocalTimeZoneId();
+
+        var nameParts = _displayName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        _initials = nameParts.Length >= 2
+            ? $"{nameParts[0][0]}{nameParts[^1][0]}".ToUpperInvariant()
+            : (nameParts.Length == 1 ? nameParts[0][0..Math.Min(2, nameParts[0].Length)].ToUpperInvariant() : "?");
+        _avatarColor = AvatarColors[Math.Abs(_userId) % AvatarColors.Length];
+
+        // Ensure current timezone is in the list
+        if (!_timeZones.Any(tz => tz.Id == _timeZoneId))
+        {
+            var allZones = TimeZoneHelper.GetAllTimeZones();
+            var match = allZones.FirstOrDefault(tz => tz.Id == _timeZoneId);
+            if (match != default)
+                _timeZones.Insert(0, match);
+        }
+
+        _loading = false;
+    }
+
+    private async Task SetTheme(string theme)
+    {
+        _theme = theme;
+        await JS.InvokeVoidAsync("setTheme", theme);
+
+        var user = await Db.Users.FindAsync(_userId);
+        if (user is not null)
+        {
+            user.ThemePreference = theme;
+            await Db.SaveChangesAsync();
+        }
+    }
+
+    private async Task OnTimezoneChanged(ChangeEventArgs e)
+    {
+        var newTz = e.Value?.ToString();
+        if (string.IsNullOrEmpty(newTz) || !TimeZoneHelper.IsValidTimeZoneId(newTz))
+            return;
+
+        _timeZoneId = newTz;
+        _timezoneSaved = false;
+
+        var user = await Db.Users.FindAsync(_userId);
+        if (user is not null)
+        {
+            user.TimeZonePreference = newTz;
+            await Db.SaveChangesAsync();
+            _timezoneSaved = true;
+        }
+    }
+
+    private void ToggleAllTimeZones()
+    {
+        _showAllTimeZones = !_showAllTimeZones;
+        var currentId = _timeZoneId;
+        _timeZones = _showAllTimeZones
+            ? TimeZoneHelper.GetAllTimeZones()
+            : TimeZoneHelper.GetCommonTimeZones();
+
+        if (!string.IsNullOrEmpty(currentId) && !_timeZones.Any(tz => tz.Id == currentId))
+        {
+            var allZones = TimeZoneHelper.GetAllTimeZones();
+            var match = allZones.FirstOrDefault(tz => tz.Id == currentId);
+            if (match != default)
+                _timeZones.Insert(0, match);
+        }
+    }
+}

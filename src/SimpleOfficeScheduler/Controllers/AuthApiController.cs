@@ -31,7 +31,8 @@ public class AuthApiController : ControllerBase
             new(ClaimTypes.NameIdentifier, result.User.Id.ToString()),
             new(ClaimTypes.Name, result.User.Username),
             new("DisplayName", result.User.DisplayName),
-            new(ClaimTypes.Email, result.User.Email)
+            new(ClaimTypes.Email, result.User.Email),
+            new("ThemePreference", result.User.ThemePreference)
         };
 
         var identity = new ClaimsIdentity(claims, "Cookies");
@@ -43,7 +44,9 @@ public class AuthApiController : ControllerBase
             Id = result.User.Id,
             Username = result.User.Username,
             DisplayName = result.User.DisplayName,
-            Email = result.User.Email
+            Email = result.User.Email,
+            ThemePreference = result.User.ThemePreference,
+            TimeZonePreference = result.User.TimeZonePreference
         });
     }
 
