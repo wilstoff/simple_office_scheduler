@@ -29,7 +29,9 @@ jobs:
         run: dotnet build --no-restore
 
       - name: Install Playwright browsers
-        run: pwsh tests/SimpleOfficeScheduler.Tests/bin/Debug/net8.0/playwright.ps1 install chromium --with-deps
+        run: |
+          dotnet tool install --global Microsoft.Playwright.CLI
+          playwright install chromium --with-deps
 
       - name: Test
         run: dotnet test --no-build --verbosity normal --logger "trx;LogFileName=test-results.trx"
@@ -42,10 +44,27 @@ jobs:
           path: '**/TestResults/*.trx'
           retention-days: 7
 
-  docker-build:
+  docker-build-and-publish:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v4
 
+      - name: Log in to GitHub Container Registry
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build Docker image
-        run: docker build -t simple-office-scheduler .
+        run: docker build -t ghcr.io/${{ github.repository }}:latest -t ghcr.io/${{ github.repository }}:${{ github.sha }} .
+
+      - name: Push to GHCR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          docker push ghcr.io/${{ github.repository }}:latest
+          docker push ghcr.io/${{ github.repository }}:${{ github.sha }}

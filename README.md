@@ -6,6 +6,18 @@ An office hours scheduling application built with ASP.NET Core 8 Blazor Server, 
 
 ## Quick Start (Docker)
 
+Pull the pre-built image from GitHub Container Registry:
+
+```bash
+docker run -d -p 8080:8080 \
+  -v scheduler-data:/app/data \
+  -e ActiveDirectory__Enabled=false \
+  -e SeedUser__Enabled=true \
+  ghcr.io/wilstoff/simple_office_scheduler:latest
+```
+
+Or build locally:
+
 ```bash
 docker build -t simple-office-scheduler .
 docker run -d -p 8080:8080 \
@@ -105,7 +117,8 @@ The app starts on `http://localhost:5000` with the Development profile (AD disab
 ```bash
 # Install Playwright browsers (first time only)
 dotnet build tests/SimpleOfficeScheduler.Tests
-pwsh tests/SimpleOfficeScheduler.Tests/bin/Debug/net8.0/playwright.ps1 install chromium
+dotnet tool install --global Microsoft.Playwright.CLI
+playwright install chromium
 
 # Run all tests
 dotnet test
