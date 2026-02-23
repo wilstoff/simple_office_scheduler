@@ -24,6 +24,10 @@ src/SimpleOfficeScheduler/wwwroot/js/fullcalendar-interop.js.map
 *.swp
 *~
 
+## Test results
+test-results/
+TestResults/
+
 ## OS
 Thumbs.db
 .DS_Store
