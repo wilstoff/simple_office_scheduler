@@ -126,7 +126,7 @@ public class UITests : IClassFixture<PlaywrightWebAppFixture>, IAsyncLifetime
         // Navigate to calendar
         await _page.GotoAsync($"{_fixture.BaseUrl}/");
         await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-        await _page.WaitForTimeoutAsync(2000);
+        await _page.WaitForSelectorAsync(".fc-view", new() { Timeout = 10000 });
 
         // Find event blocks on the calendar
         var events = _page.Locator(".fc-timegrid-event");
@@ -168,7 +168,7 @@ public class UITests : IClassFixture<PlaywrightWebAppFixture>, IAsyncLifetime
         // Navigate to calendar
         await _page.GotoAsync($"{_fixture.BaseUrl}/");
         await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-        await _page.WaitForTimeoutAsync(2000);
+        await _page.WaitForSelectorAsync(".fc-view", new() { Timeout = 10000 });
 
         // Find event blocks
         var events = _page.Locator(".fc-timegrid-event");
@@ -216,8 +216,7 @@ public class UITests : IClassFixture<PlaywrightWebAppFixture>, IAsyncLifetime
             null, new() { Timeout = 10000 });
 
         // Hover over sidebar to expand it
-        await _page.Locator(".sidebar").HoverAsync();
-        await _page.WaitForTimeoutAsync(400); // Wait for 200ms transition + buffer
+        await WaitForSidebarExpanded();
 
         // Assert the brand label is visible and shows full text
         var brandLabel = _page.Locator(".navbar-brand .nav-label");
@@ -329,7 +328,7 @@ public class UITests : IClassFixture<PlaywrightWebAppFixture>, IAsyncLifetime
         // User 1 navigates to calendar
         await _page.GotoAsync($"{_fixture.BaseUrl}/");
         await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-        await _page.WaitForTimeoutAsync(2000);
+        await _page.WaitForSelectorAsync(".fc-view", new() { Timeout = 10000 });
 
         // Record initial event count for User 1
         var initialCount = await _page.Locator(".fc-timegrid-event").CountAsync();
@@ -343,7 +342,7 @@ public class UITests : IClassFixture<PlaywrightWebAppFixture>, IAsyncLifetime
         await LoginOnPage(page2);
         await page2.GotoAsync($"{_fixture.BaseUrl}/");
         await page2.WaitForLoadStateAsync(LoadState.NetworkIdle);
-        await page2.WaitForTimeoutAsync(2000);
+        await page2.WaitForSelectorAsync(".fc-view", new() { Timeout = 10000 });
 
         // User 2 creates a new event via API
         var today = DateTime.Now.Date;
@@ -351,9 +350,9 @@ public class UITests : IClassFixture<PlaywrightWebAppFixture>, IAsyncLifetime
 
         // Wait for User 1's calendar to show the new event (without manual refresh)
         var eventAppeared = false;
-        for (var i = 0; i < 20; i++)
+        for (var i = 0; i < 50; i++)
         {
-            await _page.WaitForTimeoutAsync(500);
+            await _page.WaitForTimeoutAsync(100);
             var currentCount = await _page.Locator(".fc-timegrid-event").CountAsync();
             if (currentCount > initialCount)
             {
@@ -413,18 +412,25 @@ public class UITests : IClassFixture<PlaywrightWebAppFixture>, IAsyncLifetime
             $"{context}: #fullcalendar-container should have children, got {containerChildCount}");
     }
 
+    private async Task WaitForSidebarExpanded(IPage? page = null)
+    {
+        var p = page ?? _page;
+        await p.Locator(".sidebar").HoverAsync();
+        await p.WaitForFunctionAsync(
+            "() => document.querySelector('.sidebar')?.getBoundingClientRect().width >= 240",
+            null, new() { Timeout = 3000, PollingInterval = 50 });
+    }
+
     private async Task ClickNavLink(string text)
     {
-        await _page.Locator(".sidebar").HoverAsync();
-        await _page.WaitForTimeoutAsync(300);
+        await WaitForSidebarExpanded();
         await _page.Locator(".nav-link", new() { HasText = text }).ClickAsync();
         await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
     }
 
     private async Task ClickBrandLink()
     {
-        await _page.Locator(".sidebar").HoverAsync();
-        await _page.WaitForTimeoutAsync(300);
+        await WaitForSidebarExpanded();
         await _page.Locator(".navbar-brand").ClickAsync();
         await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
     }
@@ -471,7 +477,7 @@ public class UITests : IClassFixture<PlaywrightWebAppFixture>, IAsyncLifetime
                     await ClickNavLink("Calendar");
                     await _page.WaitForSelectorAsync(".fc-view", new() { Timeout = 10000 });
                     await ClickBrandLink();
-                    await _page.WaitForTimeoutAsync(500);
+                    await _page.WaitForSelectorAsync(".fc-view", new() { Timeout = 10000 });
                     await AssertCalendarFullyRendered($"{label}: Events → Calendar → brand");
                     break;
 
@@ -494,9 +500,9 @@ public class UITests : IClassFixture<PlaywrightWebAppFixture>, IAsyncLifetime
 
                 case 5: // brand → brand (double brand click on calendar)
                     await ClickBrandLink();
-                    await _page.WaitForTimeoutAsync(500);
+                    await _page.WaitForSelectorAsync(".fc-view", new() { Timeout = 10000 });
                     await ClickBrandLink();
-                    await _page.WaitForTimeoutAsync(500);
+                    await _page.WaitForSelectorAsync(".fc-view", new() { Timeout = 10000 });
                     await AssertCalendarFullyRendered($"{label}: brand → brand");
                     break;
             }
@@ -550,7 +556,6 @@ public class UITests : IClassFixture<PlaywrightWebAppFixture>, IAsyncLifetime
         for (var i = 1; i <= 5; i++)
         {
             await ClickNavLink("Calendar");
-            await _page.WaitForTimeoutAsync(1500);
             await _page.WaitForSelectorAsync(".fc-view", new() { Timeout = 10000 });
             await AssertCalendarFullyRendered($"After Calendar click {i}");
         }
@@ -559,7 +564,6 @@ public class UITests : IClassFixture<PlaywrightWebAppFixture>, IAsyncLifetime
         for (var i = 1; i <= 5; i++)
         {
             await ClickBrandLink();
-            await _page.WaitForTimeoutAsync(1500);
             await _page.WaitForSelectorAsync(".fc-view", new() { Timeout = 10000 });
             await AssertCalendarFullyRendered($"After brand click {i}");
         }
@@ -568,12 +572,10 @@ public class UITests : IClassFixture<PlaywrightWebAppFixture>, IAsyncLifetime
         for (var i = 1; i <= 5; i++)
         {
             await ClickNavLink("Calendar");
-            await _page.WaitForTimeoutAsync(1000);
             await _page.WaitForSelectorAsync(".fc-view", new() { Timeout = 10000 });
             await AssertCalendarFullyRendered($"Calendar-brand alternation {i}a");
 
             await ClickBrandLink();
-            await _page.WaitForTimeoutAsync(1000);
             await _page.WaitForSelectorAsync(".fc-view", new() { Timeout = 10000 });
             await AssertCalendarFullyRendered($"Calendar-brand alternation {i}b");
         }
@@ -587,49 +589,92 @@ public class UITests : IClassFixture<PlaywrightWebAppFixture>, IAsyncLifetime
         await _page.GotoAsync($"{_fixture.BaseUrl}/");
         await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
 
+        // Toggle to light theme and wait for DB save
+        await _page.RunAndWaitForResponseAsync(
+            async () => await _page.Locator(".theme-toggle").ClickAsync(),
+            r => r.Url.Contains("/api/user/settings") && r.Status == 200,
+            new() { Timeout = 5000 });
+
+        await _page.WaitForFunctionAsync(
+            "() => document.documentElement.getAttribute('data-theme') === 'light'",
+            null, new() { Timeout = 3000 });
+
+        // Navigate through sidebar pages and verify theme persists on each
+        var sidebarPages = new[] { "Events", "Create Event", "Calendar" };
+        foreach (var pageName in sidebarPages)
+        {
+            await WaitForSidebarExpanded();
+            await _page.Locator(".nav-link", new() { HasText = pageName }).ClickAsync();
+            await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+
+            await _page.WaitForFunctionAsync(
+                "() => document.documentElement.getAttribute('data-theme') === 'light'",
+                null, new() { Timeout = 3000 });
+        }
+
+        // Navigate to Settings page via the user avatar link
+        await _page.Locator(".user-link").ClickAsync();
+        await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+
+        await _page.WaitForFunctionAsync(
+            "() => document.documentElement.getAttribute('data-theme') === 'light'",
+            null, new() { Timeout = 3000 });
+
+        // Navigate back to Calendar from Settings via sidebar
+        await WaitForSidebarExpanded();
+        await _page.Locator(".nav-link", new() { HasText = "Calendar" }).ClickAsync();
+        await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+
+        await _page.WaitForFunctionAsync(
+            "() => document.documentElement.getAttribute('data-theme') === 'light'",
+            null, new() { Timeout = 3000 });
+    }
+
+    [Fact]
+    public async Task Theme_Icon_Matches_Theme_After_Navigation()
+    {
+        await _page.GotoAsync($"{_fixture.BaseUrl}/");
+        await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+
+        // Default is dark: sun icon visible, moon icon hidden
+        var sunVisible = await _page.Locator(".theme-icon-dark").IsVisibleAsync();
+        var moonVisible = await _page.Locator(".theme-icon-light").IsVisibleAsync();
+        Assert.True(sunVisible, "Sun icon should be visible in dark mode");
+        Assert.False(moonVisible, "Moon icon should be hidden in dark mode");
+
         // Toggle to light theme
         await _page.Locator(".theme-toggle").ClickAsync();
         await _page.WaitForFunctionAsync(
             "() => document.documentElement.getAttribute('data-theme') === 'light'",
             null, new() { Timeout = 3000 });
 
-        // Wait for DB save to complete
-        await _page.WaitForTimeoutAsync(500);
+        // Now moon visible, sun hidden
+        sunVisible = await _page.Locator(".theme-icon-dark").IsVisibleAsync();
+        moonVisible = await _page.Locator(".theme-icon-light").IsVisibleAsync();
+        Assert.False(sunVisible, "Sun icon should be hidden in light mode");
+        Assert.True(moonVisible, "Moon icon should be visible in light mode");
 
-        // Navigate through sidebar pages and verify theme persists on each
-        var sidebarPages = new[] { "Events", "Create Event", "Calendar" };
-        foreach (var pageName in sidebarPages)
-        {
-            await _page.Locator(".sidebar").HoverAsync();
-            await _page.WaitForTimeoutAsync(300);
-            await _page.Locator(".nav-link", new() { HasText = pageName }).ClickAsync();
-            await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-            await _page.WaitForTimeoutAsync(300);
-
-            var theme = await _page.EvaluateAsync<string?>(
-                "document.documentElement.getAttribute('data-theme')");
-            Assert.Equal("light", theme);
-        }
-
-        // Navigate to Settings page via the user avatar link
-        await _page.Locator(".user-link").ClickAsync();
+        // Navigate to Events page
+        await WaitForSidebarExpanded();
+        await _page.Locator(".nav-link", new() { HasText = "Events" }).ClickAsync();
         await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-        await _page.WaitForTimeoutAsync(300);
 
-        var settingsTheme = await _page.EvaluateAsync<string?>(
-            "document.documentElement.getAttribute('data-theme')");
-        Assert.Equal("light", settingsTheme);
+        // Icons should still reflect light mode after navigation
+        sunVisible = await _page.Locator(".theme-icon-dark").IsVisibleAsync();
+        moonVisible = await _page.Locator(".theme-icon-light").IsVisibleAsync();
+        Assert.False(sunVisible, "Sun icon should be hidden after nav in light mode");
+        Assert.True(moonVisible, "Moon icon should be visible after nav in light mode");
 
-        // Navigate back to Calendar from Settings via sidebar
-        await _page.Locator(".sidebar").HoverAsync();
-        await _page.WaitForTimeoutAsync(300);
-        await _page.Locator(".nav-link", new() { HasText = "Calendar" }).ClickAsync();
-        await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-        await _page.WaitForTimeoutAsync(300);
+        // Toggle back to dark
+        await _page.Locator(".theme-toggle").ClickAsync();
+        await _page.WaitForFunctionAsync(
+            "() => !document.documentElement.getAttribute('data-theme')",
+            null, new() { Timeout = 3000 });
 
-        var finalTheme = await _page.EvaluateAsync<string?>(
-            "document.documentElement.getAttribute('data-theme')");
-        Assert.Equal("light", finalTheme);
+        sunVisible = await _page.Locator(".theme-icon-dark").IsVisibleAsync();
+        moonVisible = await _page.Locator(".theme-icon-light").IsVisibleAsync();
+        Assert.True(sunVisible, "Sun icon should be visible after toggling back to dark");
+        Assert.False(moonVisible, "Moon icon should be hidden after toggling back to dark");
     }
 
     // ===== TDD TESTS: Logo Alignment (Req 2) =====
@@ -672,8 +717,7 @@ public class UITests : IClassFixture<PlaywrightWebAppFixture>, IAsyncLifetime
             null, new() { Timeout = 10000 });
 
         // Hover to expand
-        await _page.Locator(".sidebar").HoverAsync();
-        await _page.WaitForTimeoutAsync(400);
+        await WaitForSidebarExpanded();
 
         var sidebar = _page.Locator(".sidebar");
         var sidebarBox = await sidebar.BoundingBoxAsync();
@@ -748,7 +792,7 @@ public class UITests : IClassFixture<PlaywrightWebAppFixture>, IAsyncLifetime
         await _page.GotoAsync($"{_fixture.BaseUrl}/");
         await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
 
-        // Set user's timezone preference via API
+        // Set user's timezone preference via API and wait for response
         await _page.EvaluateAsync(@"
             fetch('/api/user/settings/timezone', {
                 method: 'PUT',
@@ -756,12 +800,11 @@ public class UITests : IClassFixture<PlaywrightWebAppFixture>, IAsyncLifetime
                 body: JSON.stringify({ timeZoneId: 'America/New_York' })
             })
         ");
-        await _page.WaitForTimeoutAsync(500);
 
         // Navigate to create event page
         await _page.GotoAsync($"{_fixture.BaseUrl}/events/create");
         await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-        await _page.WaitForTimeoutAsync(1000);
+        await _page.WaitForSelectorAsync("#timeZone", new() { Timeout = 5000 });
 
         // Check the timezone select value
         var tzValue = await _page.Locator("#timeZone").InputValueAsync();
@@ -807,17 +850,17 @@ public class UITests : IClassFixture<PlaywrightWebAppFixture>, IAsyncLifetime
     {
         await _page.GotoAsync($"{_fixture.BaseUrl}/settings");
         await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-        await _page.WaitForTimeoutAsync(1000);
+        await _page.WaitForSelectorAsync("select.form-select", new() { Timeout = 5000 });
 
-        // Select a timezone
+        // Select a timezone and wait for save confirmation
         var tzSelect = _page.Locator("select.form-select");
         await tzSelect.SelectOptionAsync("America/Chicago");
-        await _page.WaitForTimeoutAsync(500);
+        await _page.WaitForSelectorAsync("text=Timezone saved", new() { Timeout = 5000 });
 
         // Reload the page
         await _page.ReloadAsync();
         await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-        await _page.WaitForTimeoutAsync(1000);
+        await _page.WaitForSelectorAsync("select.form-select", new() { Timeout = 5000 });
 
         // Timezone should still be selected
         var selectedTz = await _page.Locator("select.form-select").InputValueAsync();
@@ -845,7 +888,7 @@ public class UITests : IClassFixture<PlaywrightWebAppFixture>, IAsyncLifetime
         // Switch to monthly view
         var monthButton = _page.Locator(".fc-dayGridMonth-button");
         await monthButton.ClickAsync();
-        await _page.WaitForTimeoutAsync(1000);
+        await _page.WaitForSelectorAsync(".fc-daygrid-event", new() { Timeout = 10000 });
 
         // Find events in the monthly view
         var events = _page.Locator(".fc-daygrid-event");

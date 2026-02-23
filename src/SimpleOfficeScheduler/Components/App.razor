@@ -42,18 +42,7 @@
         window.toggleTheme = function() {
             var isLight = document.documentElement.getAttribute('data-theme') === 'light';
             window.setTheme(isLight ? 'dark' : 'light');
-            var d = document.querySelector('.theme-icon-dark');
-            var l = document.querySelector('.theme-icon-light');
-            if (d) d.style.display = isLight ? 'inline' : 'none';
-            if (l) l.style.display = isLight ? 'none' : 'inline';
         };
-        document.addEventListener('DOMContentLoaded', function() {
-            var isLight = document.documentElement.getAttribute('data-theme') === 'light';
-            var d = document.querySelector('.theme-icon-dark');
-            var l = document.querySelector('.theme-icon-light');
-            if (d) d.style.display = isLight ? 'none' : 'inline';
-            if (l) l.style.display = isLight ? 'inline' : 'none';
-        });
         // Re-apply theme after Blazor enhanced navigation (head scripts don't re-run)
         function applyThemeFromStorage() {
             var t = localStorage.getItem('theme');
@@ -62,11 +51,6 @@
             } else {
                 document.documentElement.removeAttribute('data-theme');
             }
-            var d = document.querySelector('.theme-icon-dark');
-            var l = document.querySelector('.theme-icon-light');
-            var isLight = t === 'light';
-            if (d) d.style.display = isLight ? 'none' : 'inline';
-            if (l) l.style.display = isLight ? 'inline' : 'none';
         }
         document.addEventListener('blazor:enhancedload', function() {
             applyThemeFromStorage();

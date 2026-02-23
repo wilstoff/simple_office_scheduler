@@ -591,6 +591,12 @@ h1:focus {
     border-color: var(--text-muted);
 }
 
+/* Icon visibility driven by data-theme attribute (no JS needed) */
+.theme-icon-dark { display: inline; }
+.theme-icon-light { display: none; }
+[data-theme="light"] .theme-icon-dark { display: none; }
+[data-theme="light"] .theme-icon-light { display: inline; }
+
 /* ===== RESPONSIVE PANEL ===== */
 @media (max-width: 1280px) {
     .side-panel {
