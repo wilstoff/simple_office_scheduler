@@ -892,4 +892,57 @@ public class UITests : IClassFixture<PlaywrightWebAppFixture>, IAsyncLifetime
         var eventHtml = await events.First.InnerHTMLAsync();
         Assert.Matches(@"\d{1,2}(:\d{2})?[ap]", eventHtml);
     }
+
+    // ===== TDD TESTS: EventCreate Validation Bug =====
+
+    [Fact]
+    public async Task EventCreate_Does_Not_Show_Validation_Error_On_Valid_Submit()
+    {
+        // Navigate to create event page
+        await _page.GotoAsync($"{_fixture.BaseUrl}/events/create");
+        await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+
+        // Wait for the Blazor circuit to be active (title input should be interactive)
+        await _page.WaitForSelectorAsync("#title", new() { Timeout = 10000 });
+
+        // Type a valid title
+        await _page.Locator("#title").FillAsync("Validation Test Event");
+
+        // Click submit
+        await _page.Locator("button[type='submit']").ClickAsync();
+
+        // Wait for either navigation (success) or validation error
+        await _page.WaitForTimeoutAsync(2000);
+
+        // There should NOT be a "Title" required validation error
+        var validationText = await _page.Locator(".validation-summary-errors, .validation-message").AllTextContentsAsync();
+        var hasTitleError = validationText.Any(m =>
+            m.Contains("Title", StringComparison.OrdinalIgnoreCase) &&
+            m.Contains("required", StringComparison.OrdinalIgnoreCase));
+
+        Assert.False(hasTitleError,
+            "Should NOT show 'Title is required' when a valid title was entered");
+    }
+
+    // ===== TDD TESTS: JS Bundle Loading =====
+
+    [Fact]
+    public async Task FullCalendar_JS_Bundle_Loads_As_ES_Module()
+    {
+        await _page.GotoAsync($"{_fixture.BaseUrl}/");
+        await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+
+        // Verify the JS module can be imported (this is what OnAfterRenderAsync does)
+        var moduleLoaded = await _page.EvaluateAsync<bool>(@"
+            (async () => {
+                try {
+                    const mod = await import('/js/fullcalendar-interop.js');
+                    return typeof mod.initCalendar === 'function';
+                } catch (e) {
+                    return false;
+                }
+            })()
+        ");
+        Assert.True(moduleLoaded, "fullcalendar-interop.js should be loadable as an ES module with initCalendar export");
+    }
 }

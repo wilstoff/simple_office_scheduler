@@ -138,6 +138,32 @@ jobs:
           OCC_ID=$(echo "$EVENT" | jq -r '.occurrences[0].id')
           echo "Event created: id=$EVENT_ID, occurrence=$OCC_ID"
 
+          # 2b. Verify event times match what we sent (no timezone offset)
+          EVT_START=$(echo "$EVENT" | jq -r .startTime)
+          EVT_END=$(echo "$EVENT" | jq -r .endTime)
+          OCC_START=$(echo "$EVENT" | jq -r '.occurrences[0].startTime')
+          OCC_END=$(echo "$EVENT" | jq -r '.occurrences[0].endTime')
+          echo "Event times: start=$EVT_START end=$EVT_END"
+          echo "Occurrence times: start=$OCC_START end=$OCC_END"
+
+          if [[ "$EVT_START" != *"09:00:00"* ]]; then
+            echo "FAIL: event startTime shifted. Expected 09:00:00, got $EVT_START"
+            exit 1
+          fi
+          if [[ "$EVT_END" != *"10:00:00"* ]]; then
+            echo "FAIL: event endTime shifted. Expected 10:00:00, got $EVT_END"
+            exit 1
+          fi
+          if [[ "$OCC_START" != *"09:00:00"* ]]; then
+            echo "FAIL: occurrence startTime shifted. Expected 09:00:00, got $OCC_START"
+            exit 1
+          fi
+          if [[ "$OCC_END" != *"10:00:00"* ]]; then
+            echo "FAIL: occurrence endTime shifted. Expected 10:00:00, got $OCC_END"
+            exit 1
+          fi
+          echo "Time validation OK: event and occurrence times match sent values"
+
           # 3. Sign up for event
           curl -sf -X POST "http://localhost:8080/api/events/${EVENT_ID}/signup/${OCC_ID}" \
             -b cookies.txt
