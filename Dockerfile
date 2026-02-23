@@ -30,6 +30,10 @@ RUN dotnet publish src/SimpleOfficeScheduler/SimpleOfficeScheduler.csproj \
     -o /app/publish \
     --no-restore
 
+# Verify publish manifest exists (required by MapStaticAssets for .NET 10)
+RUN test -f /app/publish/SimpleOfficeScheduler.staticwebassets.endpoints.json \
+    || (echo "FATAL: static assets manifest missing from publish output" && exit 1)
+
 # ---- Runtime Stage ----
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 

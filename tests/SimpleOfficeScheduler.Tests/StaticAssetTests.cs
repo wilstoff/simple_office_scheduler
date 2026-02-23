@@ -5,10 +5,13 @@ using Microsoft.AspNetCore.Mvc.Testing;
 namespace SimpleOfficeScheduler.Tests;
 
 /// <summary>
-/// Tests that critical static assets are served correctly through the REAL Program.cs pipeline.
-/// Uses Development environment so that static web assets (including framework files from NuGet
-/// packages like blazor.web.js) are discovered — matching the Playwright fixture and published
-/// Docker behavior.
+/// Tests that app static assets are served correctly through the real Program.cs pipeline.
+/// Uses Testing environment (NOT Development) to avoid UseStaticWebAssets() masking issues.
+///
+/// Note: _framework/blazor.web.js CANNOT be tested via WebApplicationFactory because framework
+/// assets are only discoverable in Development mode (via UseStaticWebAssets) or from published
+/// output. In .NET 10, MapStaticAssets() serves blazor.web.js in Docker/Production through an
+/// internal framework mechanism. The CI Docker smoke test (ci.yml) validates this end-to-end.
 /// </summary>
 public class StaticAssetTests : IAsyncLifetime
 {
@@ -20,7 +23,7 @@ public class StaticAssetTests : IAsyncLifetime
         _factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
             {
-                builder.UseEnvironment("Development");
+                builder.UseEnvironment("Testing");
             });
         _client = _factory.CreateClient(new WebApplicationFactoryClientOptions
         {
@@ -33,14 +36,6 @@ public class StaticAssetTests : IAsyncLifetime
     {
         _client.Dispose();
         await _factory.DisposeAsync();
-    }
-
-    [Fact]
-    public async Task BlazorWebJs_Returns200()
-    {
-        var response = await _client.GetAsync("/_framework/blazor.web.js");
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     [Fact]
