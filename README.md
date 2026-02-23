@@ -45,6 +45,8 @@ All settings can be overridden with environment variables using the `__` (double
 | `ActiveDirectory__UseSsl` | `false` | Use SSL for LDAP connection |
 | `ActiveDirectory__Domain` | `COMPANY` | AD domain name |
 | `ActiveDirectory__SearchBase` | `DC=company,DC=com` | LDAP search base DN |
+| `ActiveDirectory__ServiceAccountDn` | *(empty)* | Service account DN for user search (e.g. `CN=svc_scheduler,OU=Service Accounts,DC=company,DC=com`) |
+| `ActiveDirectory__ServiceAccountPassword` | *(empty)* | Service account password for user search |
 
 ### Teams Calendar Integration (optional)
 
@@ -82,6 +84,8 @@ docker run -d -p 8080:8080 \
   -e ActiveDirectory__Host=ldap.mycompany.com \
   -e ActiveDirectory__Domain=MYCOMPANY \
   -e ActiveDirectory__SearchBase="DC=mycompany,DC=com" \
+  -e ActiveDirectory__ServiceAccountDn="CN=svc_scheduler,OU=Service Accounts,DC=mycompany,DC=com" \
+  -e ActiveDirectory__ServiceAccountPassword="s3cret" \
   simple-office-scheduler
 ```
 
@@ -131,7 +135,7 @@ dotnet test
 - Sign up for events with capacity enforcement
 - Cancel specific instances of recurring events
 - Adjust event schedule and recurrence
-- Transfer event ownership
+- Transfer event ownership with searchable user lookup (local DB + Active Directory)
 - Active Directory (LDAP) authentication
 - Microsoft Teams calendar invites via Graph API
 - Light/dark theme with per-user persistence
@@ -146,6 +150,6 @@ src/SimpleOfficeScheduler/
   Services/        - Business logic (events, auth, calendar, recurrence)
   Auth/            - Blazor authentication state provider
   Components/      - Blazor pages and layout
-  Controllers/     - API endpoint for FullCalendar JSON feed
+  Controllers/     - API endpoints (calendar feed, events, user search, auth)
   ClientApp/       - TypeScript source for FullCalendar interop
 ```

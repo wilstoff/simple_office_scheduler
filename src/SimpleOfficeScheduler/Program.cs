@@ -12,6 +12,7 @@ using SimpleOfficeScheduler.Services.Events;
 using SimpleOfficeScheduler.Services;
 using Microsoft.AspNetCore.DataProtection;
 using SimpleOfficeScheduler.Services.Recurrence;
+using SimpleOfficeScheduler.Services.Users;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -78,6 +79,7 @@ builder.Services.AddSingleton<CalendarUpdateNotifier>();
 // Application services
 builder.Services.AddScoped<RecurrenceExpander>();
 builder.Services.AddScoped<IEventService, EventService>();
+builder.Services.AddScoped<IUserSearchService, UserSearchService>();
 builder.Services.AddScoped<DbSeeder>();
 builder.Services.AddHostedService<RecurrenceExpansionBackgroundService>();
 

@@ -6,6 +6,7 @@
 @inject AuthenticationStateProvider AuthStateProvider
 @inject NavigationManager Navigation
 @inject IClock Clock
+@inject IUserSearchService UserSearchService
 @rendermode InteractiveServer
 
 <PageTitle>Event Details - Office Scheduler</PageTitle>
@@ -65,10 +66,23 @@
     <div class="card mb-3">
         <div class="card-body">
             <h5 class="card-title">Transfer Ownership</h5>
-            <div class="input-group">
-                <InputNumber class="form-control" placeholder="New owner User ID" @bind-Value="_transferUserId" />
-                <button class="btn btn-outline-warning" @onclick="TransferOwnership">Transfer</button>
+            <div class="mb-2">
+                <UserTypeahead @bind-SelectedUser="_selectedTransferUser"
+                               ExcludeUserId="_currentUserId"
+                               Placeholder="Search by name, username, or email..." />
             </div>
+            <button class="btn btn-outline-warning"
+                    @onclick="TransferOwnership"
+                    disabled="@(_selectedTransferUser is null)">
+                @if (_selectedTransferUser is not null)
+                {
+                    <span>Transfer to @_selectedTransferUser.DisplayName</span>
+                }
+                else
+                {
+                    <span>Transfer</span>
+                }
+            </button>
         </div>
     </div>
 }
@@ -176,7 +190,7 @@ else
     private bool _isOwner;
     private string? _message;
     private bool _messageIsError;
-    private int? _transferUserId;
+    private UserSearchResult? _selectedTransferUser;
 
     protected override async Task OnInitializedAsync()
     {
@@ -220,10 +234,27 @@ else
 
     private async Task TransferOwnership()
     {
-        if (!_transferUserId.HasValue) return;
-        var (success, error) = await EventService.TransferOwnershipAsync(EventId, _currentUserId, _transferUserId.Value);
-        _message = success ? "Ownership transferred." : error;
+        if (_selectedTransferUser is null) return;
+
+        var targetUserId = _selectedTransferUser.Id;
+
+        // If this is an AD-only user (not yet in local DB), create their local record first
+        if (_selectedTransferUser.IsAdOnly)
+        {
+            var ensured = await UserSearchService.EnsureUserAsync(_selectedTransferUser.Username);
+            if (ensured is null)
+            {
+                _message = "Could not create local account for the selected AD user.";
+                _messageIsError = true;
+                return;
+            }
+            targetUserId = ensured.Id;
+        }
+
+        var (success, error) = await EventService.TransferOwnershipAsync(EventId, _currentUserId, targetUserId);
+        _message = success ? $"Ownership transferred to {_selectedTransferUser.DisplayName}." : error;
         _messageIsError = !success;
+        if (success) _selectedTransferUser = null;
         await LoadEvent();
     }
 }
