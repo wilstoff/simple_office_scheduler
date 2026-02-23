@@ -73,6 +73,40 @@ public class UseCase1_CreateEventTests : IntegrationTestBase
     }
 
     [Fact]
+    public async Task CreateEvent_EmptyTitle_ReturnsBadRequest()
+    {
+        await LoginAsync();
+
+        var start = new LocalDateTime(2026, 7, 1, 9, 0, 0);
+        var response = await Client.PostAsJsonAsync("/api/events", new CreateEventRequest
+        {
+            Title = "",
+            StartTime = start,
+            EndTime = start.PlusHours(1),
+            Capacity = 1
+        }, JsonOptions);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task UpdateEvent_EmptyTitle_ReturnsBadRequest()
+    {
+        await LoginAsync();
+        var evt = await CreateEventAsync("Valid Title");
+
+        var response = await Client.PutAsJsonAsync($"/api/events/{evt.Id}", new UpdateEventRequest
+        {
+            Title = "",
+            StartTime = evt.StartTime,
+            EndTime = evt.EndTime,
+            Capacity = evt.Capacity
+        }, JsonOptions);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
     public async Task CreateEvent_WithoutLogin_ReturnsUnauthorized()
     {
         var start = new LocalDateTime(2026, 7, 1, 9, 0, 0);

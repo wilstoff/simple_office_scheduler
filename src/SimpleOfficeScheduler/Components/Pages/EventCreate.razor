@@ -33,6 +33,7 @@
             <div class="mb-3">
                 <label for="title" class="form-label">Title</label>
                 <InputText id="title" class="form-control" @bind-Value="_model.Title" />
+                <ValidationMessage For="() => _model.Title" />
             </div>
 
             <div class="mb-3">
@@ -308,6 +309,7 @@
 
     private class EventFormModel
     {
+        [Required]
         public string Title { get; set; } = string.Empty;
         public string? Description { get; set; }
         public DateTime StartTime { get; set; }

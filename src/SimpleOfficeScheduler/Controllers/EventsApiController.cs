@@ -169,6 +169,20 @@ public class EventsApiController : ControllerBase
         return Ok();
     }
 
+    [HttpDelete("{id:int}")]
+    [Authorize]
+    public async Task<IActionResult> DeleteEvent(int id)
+    {
+        var (success, error) = await _eventService.DeleteEventAsync(id, GetUserId());
+        if (!success)
+        {
+            if (error == "Event not found.") return NotFound(new { error });
+            return BadRequest(new { error });
+        }
+        _notifier.Notify();
+        return Ok();
+    }
+
     [HttpPost("{id:int}/transfer")]
     [Authorize]
     public async Task<IActionResult> TransferOwnership(int id, [FromQuery] int newOwnerId)

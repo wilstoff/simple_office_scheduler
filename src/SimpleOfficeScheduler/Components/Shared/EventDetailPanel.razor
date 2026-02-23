@@ -129,6 +129,7 @@
                 @if (_isOwner)
                 {
                     <button class="btn btn-sm btn-secondary" @onclick="EditEvent">Edit</button>
+                    <button class="btn btn-sm btn-outline-danger" @onclick="DeleteEvent" disabled="@_actionInProgress">Delete Event</button>
                 }
             </div>
         </div>
@@ -294,6 +295,26 @@
         {
             await OnEditRequested.InvokeAsync(_event.Id);
         }
+    }
+
+    private async Task DeleteEvent()
+    {
+        if (_event is null) return;
+        _actionInProgress = true;
+        _statusMessage = null;
+
+        var (success, error) = await EventService.DeleteEventAsync(_event.Id, _currentUserId);
+        if (success)
+        {
+            await OnEventChanged.InvokeAsync();
+            await Close();
+        }
+        else
+        {
+            _statusMessage = error;
+            _isError = true;
+        }
+        _actionInProgress = false;
     }
 
     private async Task Close()

@@ -15,4 +15,5 @@ public interface IEventService
     Task<(bool Success, string? Error)> CancelOccurrenceAsync(int occurrenceId, int userId);
     Task<(bool Success, string? Error)> UpdateEventAsync(Event evt, int userId);
     Task<(bool Success, string? Error)> TransferOwnershipAsync(int eventId, int currentOwnerId, int newOwnerId);
+    Task<(bool Success, string? Error)> DeleteEventAsync(int eventId, int userId);
 }

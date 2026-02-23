@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using NodaTime;
 
 namespace SimpleOfficeScheduler.Models;
@@ -10,6 +11,7 @@ public class LoginRequest
 
 public class CreateEventRequest
 {
+    [Required, MinLength(1)]
     public string Title { get; set; } = string.Empty;
     public string? Description { get; set; }
     public LocalDateTime StartTime { get; set; }
@@ -21,6 +23,7 @@ public class CreateEventRequest
 
 public class UpdateEventRequest
 {
+    [Required, MinLength(1)]
     public string Title { get; set; } = string.Empty;
     public string? Description { get; set; }
     public LocalDateTime StartTime { get; set; }

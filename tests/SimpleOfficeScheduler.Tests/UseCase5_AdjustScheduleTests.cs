@@ -1,6 +1,9 @@
 using System.Net;
 using System.Net.Http.Json;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using NodaTime;
+using SimpleOfficeScheduler.Data;
 using SimpleOfficeScheduler.Models;
 
 namespace SimpleOfficeScheduler.Tests;
@@ -157,5 +160,125 @@ public class UseCase5_AdjustScheduleTests : IntegrationTestBase
             Capacity = evt.Capacity
         }, JsonOptions);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task UpdateRecurringEvent_ChangeDayOfWeek_OccurrencesOnNewDay()
+    {
+        await LoginAsync();
+
+        // Create a weekly event — pick a day 1 day from now
+        var start = LocalDateTime.FromDateTime(DateTime.Now.Date.AddDays(1).AddHours(9));
+        var originalDay = start.DayOfWeek.ToDayOfWeek();
+        var evt = await CreateEventAsync("Day Change Test",
+            startTime: start,
+            endTime: start.PlusHours(1),
+            recurrence: new RecurrencePatternDto
+            {
+                Type = RecurrenceType.Weekly,
+                DaysOfWeek = new List<DayOfWeek> { originalDay },
+                Interval = 1,
+                MaxOccurrences = 4
+            });
+
+        Assert.True(evt.Occurrences.Count > 0, "Should have initial occurrences");
+
+        // Change the recurring day to 2 days later (different day of week)
+        // Keep StartTime the same (this is what the UI does when user only changes checkboxes)
+        var newDay = (DayOfWeek)(((int)originalDay + 2) % 7);
+
+        var response = await Client.PutAsJsonAsync($"/api/events/{evt.Id}", new UpdateEventRequest
+        {
+            Title = "Day Change Test",
+            StartTime = start,
+            EndTime = start.PlusHours(1),
+            Capacity = evt.Capacity,
+            Recurrence = new RecurrencePatternDto
+            {
+                Type = RecurrenceType.Weekly,
+                DaysOfWeek = new List<DayOfWeek> { newDay },
+                Interval = 1,
+                MaxOccurrences = 4
+            }
+        }, JsonOptions);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var updated = await Client.GetFromJsonAsync<EventResponse>($"/api/events/{evt.Id}", JsonOptions);
+        Assert.NotNull(updated);
+        Assert.True(updated.Occurrences.Count > 0,
+            $"Expected occurrences on {newDay} but got none — day change produced no occurrences");
+
+        // Verify all occurrences are on the new day
+        foreach (var occ in updated.Occurrences)
+        {
+            var occDay = occ.StartTime.DayOfWeek.ToDayOfWeek();
+            Assert.Equal(newDay, occDay);
+        }
+    }
+
+    [Fact]
+    public async Task UpdateRecurringEvent_PreservesPastOccurrences()
+    {
+        await LoginAsync();
+
+        var start = LocalDateTime.FromDateTime(DateTime.Now.Date.AddDays(1).AddHours(9));
+        var evt = await CreateEventAsync("Past Preserve Test",
+            startTime: start,
+            endTime: start.PlusHours(1),
+            recurrence: new RecurrencePatternDto
+            {
+                Type = RecurrenceType.Weekly,
+                DaysOfWeek = new List<DayOfWeek> { start.DayOfWeek.ToDayOfWeek() },
+                Interval = 1,
+                MaxOccurrences = 4
+            });
+
+        // Insert a "past" occurrence directly into the DB
+        var pastStart = LocalDateTime.FromDateTime(DateTime.Now.Date.AddDays(-7).AddHours(9));
+        var pastEnd = pastStart.PlusHours(1);
+
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            db.EventOccurrences.Add(new EventOccurrence
+            {
+                EventId = evt.Id,
+                StartTime = pastStart,
+                EndTime = pastEnd
+            });
+            await db.SaveChangesAsync();
+        }
+
+        // Update the event's time (shift forward by 2 hours)
+        var newStart = LocalDateTime.FromDateTime(DateTime.Now.Date.AddDays(1).AddHours(11));
+        var response = await Client.PutAsJsonAsync($"/api/events/{evt.Id}", new UpdateEventRequest
+        {
+            Title = "Past Preserve Test",
+            StartTime = newStart,
+            EndTime = newStart.PlusHours(1),
+            Capacity = evt.Capacity,
+            Recurrence = new RecurrencePatternDto
+            {
+                Type = RecurrenceType.Weekly,
+                DaysOfWeek = new List<DayOfWeek> { newStart.DayOfWeek.ToDayOfWeek() },
+                Interval = 1,
+                MaxOccurrences = 4
+            }
+        }, JsonOptions);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        // Verify the past occurrence is still present with its original time
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var allOccurrences = await db.EventOccurrences
+                .Where(o => o.EventId == evt.Id)
+                .ToListAsync();
+            var pastOccurrence = allOccurrences
+                .FirstOrDefault(o => o.StartTime.Date == pastStart.Date);
+
+            Assert.NotNull(pastOccurrence);
+            Assert.Equal(9, pastOccurrence.StartTime.Hour); // original time, not 11
+        }
     }
 }

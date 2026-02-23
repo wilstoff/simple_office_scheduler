@@ -68,7 +68,7 @@ public class RecurrenceExpander
     {
         var currentDow = current.DayOfWeek.ToDayOfWeek();
 
-        if (pattern.DaysOfWeek.Count <= 1)
+        if (pattern.DaysOfWeek.Count == 0)
             return current.PlusDays(7 * pattern.Interval);
 
         // Find next day in the list
@@ -92,7 +92,7 @@ public class RecurrenceExpander
     {
         var currentDow = current.DayOfWeek.ToDayOfWeek();
 
-        if (pattern.DaysOfWeek.Count <= 1)
+        if (pattern.DaysOfWeek.Count == 0)
             return current.PlusDays(14);
 
         // Same logic as weekly but with 2-week interval

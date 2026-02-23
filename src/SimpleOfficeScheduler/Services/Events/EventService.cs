@@ -289,6 +289,39 @@ public class EventService : IEventService
         return (true, null);
     }
 
+    public async Task<(bool Success, string? Error)> DeleteEventAsync(int eventId, int userId)
+    {
+        var existing = await _db.Events
+            .Include(e => e.Owner)
+            .Include(e => e.Occurrences)
+                .ThenInclude(o => o.Signups)
+            .FirstOrDefaultAsync(e => e.Id == eventId);
+
+        if (existing is null)
+            return (false, "Event not found.");
+
+        if (existing.OwnerUserId != userId)
+            return (false, "Only the event owner can delete this event.");
+
+        // Cancel calendar invites for non-cancelled occurrences
+        foreach (var occ in existing.Occurrences.Where(o => !o.IsCancelled && !string.IsNullOrEmpty(o.GraphEventId)))
+        {
+            try
+            {
+                await _calendarService.CancelMeetingAsync(occ.GraphEventId!, existing.Owner);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to cancel calendar invite for occurrence {OccurrenceId}", occ.Id);
+            }
+        }
+
+        _db.Events.Remove(existing);
+        await _db.SaveChangesAsync();
+
+        return (true, null);
+    }
+
     public async Task<(bool Success, string? Error)> TransferOwnershipAsync(int eventId, int currentOwnerId, int newOwnerId)
     {
         var evt = await _db.Events.FindAsync(eventId);
