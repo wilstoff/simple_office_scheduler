@@ -63,8 +63,98 @@ jobs:
       - name: Build Docker image
         run: docker build -t ghcr.io/${{ github.repository }}:latest -t ghcr.io/${{ github.repository }}:${{ github.sha }} .
 
+      - name: Save Docker image
+        run: docker save ghcr.io/${{ github.repository }}:latest | gzip > image.tar.gz
+
+      - name: Upload Docker image
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-image
+          path: image.tar.gz
+          retention-days: 1
+
       - name: Push to GHCR
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           docker push ghcr.io/${{ github.repository }}:latest
           docker push ghcr.io/${{ github.repository }}:${{ github.sha }}
+
+  docker-smoke-test:
+    runs-on: ubuntu-latest
+    needs: docker-build-and-publish
+    steps:
+      - name: Download Docker image
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-image
+
+      - name: Load Docker image
+        run: gunzip -c image.tar.gz | docker load
+
+      - name: Start container
+        run: |
+          docker run -d --name scheduler-smoke \
+            -p 8080:8080 \
+            -e ActiveDirectory__Enabled=false \
+            -e SeedUser__Enabled=true \
+            ghcr.io/${{ github.repository }}:latest
+
+      - name: Wait for app to be ready
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8080/login > /dev/null 2>&1; then
+              echo "App is ready"
+              exit 0
+            fi
+            echo "Waiting... ($i/30)"
+            sleep 2
+          done
+          echo "App failed to start"
+          docker logs scheduler-smoke
+          exit 1
+
+      - name: Smoke test - login, create event, signup
+        run: |
+          set -e
+
+          # 1. Login
+          LOGIN=$(curl -sf -X POST http://localhost:8080/api/auth/login \
+            -H "Content-Type: application/json" \
+            -c cookies.txt \
+            -d '{"username":"testadmin","password":"Test123!"}')
+          echo "Login OK: $(echo "$LOGIN" | jq -r .displayName)"
+
+          # 2. Create event
+          EVENT=$(curl -sf -X POST http://localhost:8080/api/events \
+            -H "Content-Type: application/json" \
+            -b cookies.txt \
+            -d '{
+              "title":"CI Smoke Test Event",
+              "startTime":"2099-01-15T09:00:00",
+              "endTime":"2099-01-15T10:00:00",
+              "capacity":5
+            }')
+          EVENT_ID=$(echo "$EVENT" | jq -r .id)
+          OCC_ID=$(echo "$EVENT" | jq -r '.occurrences[0].id')
+          echo "Event created: id=$EVENT_ID, occurrence=$OCC_ID"
+
+          # 3. Sign up for event
+          curl -sf -X POST "http://localhost:8080/api/events/${EVENT_ID}/signup/${OCC_ID}" \
+            -b cookies.txt
+          echo "Signup OK"
+
+          # 4. Verify signup
+          VERIFY=$(curl -sf "http://localhost:8080/api/events/${EVENT_ID}" \
+            -b cookies.txt)
+          SIGNUP_COUNT=$(echo "$VERIFY" | jq -r '.occurrences[0].signupCount')
+          if [ "$SIGNUP_COUNT" -ne 1 ]; then
+            echo "FAIL: expected signupCount=1, got $SIGNUP_COUNT"
+            exit 1
+          fi
+          echo "Verified: signupCount=$SIGNUP_COUNT"
+
+      - name: Stop container
+        if: always()
+        run: |
+          docker logs scheduler-smoke
+          docker rm -f scheduler-smoke
