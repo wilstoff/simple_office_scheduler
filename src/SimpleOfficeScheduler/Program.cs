@@ -98,6 +98,7 @@ if (!app.Environment.IsDevelopment())
 }
 
 app.MapStaticAssets();
+app.UseStaticFiles(); // Fallback for assets not in the MapStaticAssets manifest (e.g. esbuild output)
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseAntiforgery();
