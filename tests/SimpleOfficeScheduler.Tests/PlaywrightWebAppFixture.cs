@@ -55,6 +55,9 @@ public class PlaywrightWebAppFixture : IAsyncLifetime
         // NodaTime
         builder.Services.AddSingleton<NodaTime.IClock>(SystemClock.Instance);
 
+        // Allow subclasses to override DI services (e.g., replace IClock with FakeClock)
+        ConfigureTestServices(builder.Services);
+
         // Database (test SQLite)
         builder.Services.AddDbContext<AppDbContext>(options =>
             options.UseSqlite($"Data Source={_dbPath}",
@@ -176,6 +179,8 @@ public class PlaywrightWebAppFixture : IAsyncLifetime
             try { File.Delete(_dbPath); } catch { }
         }
     }
+
+    protected virtual void ConfigureTestServices(IServiceCollection services) { }
 
     private static string FindWebProjectDirectory()
     {

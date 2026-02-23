@@ -8,6 +8,7 @@
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
 @inject SimpleOfficeScheduler.Data.AppDbContext Db
+@inject NodaTime.IClock Clock
 @rendermode InteractiveServer
 
 <PageTitle>@(_isEditMode ? "Edit Event" : "Create Event") - Office Scheduler</PageTitle>
@@ -241,7 +242,7 @@
             }
 
             // Compute default times in the user's timezone, not the server's
-            var now = NodaTime.SystemClock.Instance.GetCurrentInstant();
+            var now = Clock.GetCurrentInstant();
             (_model.StartTime, _model.EndTime) = TimeZoneHelper.GetDefaultEventTimes(_model.TimeZoneId, now);
         }
     }

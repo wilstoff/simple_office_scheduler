@@ -4,6 +4,7 @@
 @inject AuthenticationStateProvider AuthStateProvider
 @inject IJSRuntime JS
 @inject SimpleOfficeScheduler.Data.AppDbContext Db
+@inject NodaTime.IClock Clock
 @rendermode InteractiveServer
 
 <div class="side-panel-overlay @(IsVisible ? "show" : "")" @onclick="Close"
@@ -229,10 +230,12 @@
                     }
                 }
 
+                var now = Clock.GetCurrentInstant();
+                var (defaultStart, defaultEnd) = TimeZoneHelper.GetDefaultEventTimes(resolvedTz, now);
                 _model = new EventFormModel
                 {
-                    StartTime = PrefilledStart ?? DateTime.Now.Date.AddDays(1).AddHours(9),
-                    EndTime = PrefilledEnd ?? DateTime.Now.Date.AddDays(1).AddHours(10),
+                    StartTime = PrefilledStart ?? defaultStart,
+                    EndTime = PrefilledEnd ?? defaultEnd,
                     TimeZoneId = resolvedTz
                 };
 
