@@ -27,8 +27,7 @@ RUN npm ci
 WORKDIR /src
 RUN dotnet publish src/SimpleOfficeScheduler/SimpleOfficeScheduler.csproj \
     -c Release \
-    -o /app/publish \
-    --no-restore
+    -o /app/publish
 
 # Verify publish manifest exists (required by MapStaticAssets for .NET 10)
 RUN test -f /app/publish/SimpleOfficeScheduler.staticwebassets.endpoints.json \

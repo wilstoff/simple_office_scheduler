@@ -113,7 +113,8 @@ app.UseAntiforgery();
 
 app.MapControllers();
 app.MapRazorComponents<App>()
-    .AddInteractiveServerRenderMode();
+    .AddInteractiveServerRenderMode()
+    .WithStaticAssets();
 
 app.Run();
 
