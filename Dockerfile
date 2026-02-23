@@ -1,5 +1,5 @@
 # ---- Build Stage ----
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 
 # Install Node.js for FullCalendar TypeScript build
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
@@ -30,15 +30,8 @@ RUN dotnet publish src/SimpleOfficeScheduler/SimpleOfficeScheduler.csproj \
     -o /app/publish \
     --no-restore
 
-# ---- Runtime Stage (AlmaLinux) ----
-FROM almalinux:9-minimal AS runtime
-
-# Install .NET 8 ASP.NET runtime dependencies
-RUN microdnf install -y \
-    dotnet-runtime-8.0 \
-    aspnetcore-runtime-8.0 \
-    libicu \
-    && microdnf clean all
+# ---- Runtime Stage ----
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 
 WORKDIR /app
 
