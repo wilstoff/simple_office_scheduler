@@ -226,6 +226,27 @@ public class EventService : IEventService
         return (true, null);
     }
 
+    public async Task<(bool Success, string? Error)> UncancelOccurrenceAsync(int occurrenceId, int userId)
+    {
+        var occurrence = await _db.EventOccurrences
+            .Include(o => o.Event)
+            .FirstOrDefaultAsync(o => o.Id == occurrenceId);
+
+        if (occurrence is null)
+            return (false, "Occurrence not found.");
+
+        if (occurrence.Event.OwnerUserId != userId)
+            return (false, "Only the event owner can uncancel occurrences.");
+
+        if (!occurrence.IsCancelled)
+            return (false, "This occurrence is not cancelled.");
+
+        occurrence.IsCancelled = false;
+        await _db.SaveChangesAsync();
+
+        return (true, null);
+    }
+
     public async Task<(bool Success, string? Error)> UpdateEventAsync(Event updatedEvent, int userId)
     {
         var existing = await _db.Events

@@ -173,6 +173,11 @@ else
                                             @onclick="() => CancelOccurrence(occ.Id)">Cancel Session</button>
                                 }
                             }
+                            else if (_isOwner)
+                            {
+                                <button class="btn btn-sm btn-outline-success"
+                                        @onclick="() => UncancelOccurrence(occ.Id)">Restore Session</button>
+                            }
                         </td>
                     </tr>
                 }
@@ -228,6 +233,14 @@ else
     {
         var (success, error) = await EventService.CancelOccurrenceAsync(occurrenceId, _currentUserId);
         _message = success ? "Occurrence cancelled." : error;
+        _messageIsError = !success;
+        await LoadEvent();
+    }
+
+    private async Task UncancelOccurrence(int occurrenceId)
+    {
+        var (success, error) = await EventService.UncancelOccurrenceAsync(occurrenceId, _currentUserId);
+        _message = success ? "Session restored." : error;
         _messageIsError = !success;
         await LoadEvent();
     }

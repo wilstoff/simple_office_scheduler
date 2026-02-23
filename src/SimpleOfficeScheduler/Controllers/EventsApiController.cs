@@ -169,6 +169,16 @@ public class EventsApiController : ControllerBase
         return Ok();
     }
 
+    [HttpPost("occurrences/{occurrenceId:int}/uncancel")]
+    [Authorize]
+    public async Task<IActionResult> UncancelOccurrence(int occurrenceId)
+    {
+        var (success, error) = await _eventService.UncancelOccurrenceAsync(occurrenceId, GetUserId());
+        if (!success) return BadRequest(new { error });
+        _notifier.Notify();
+        return Ok();
+    }
+
     [HttpDelete("{id:int}")]
     [Authorize]
     public async Task<IActionResult> DeleteEvent(int id)

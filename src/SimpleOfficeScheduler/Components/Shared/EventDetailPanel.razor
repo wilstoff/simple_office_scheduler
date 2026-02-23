@@ -101,6 +101,15 @@
                                 }
                             </div>
                         }
+                        else if (_isOwner)
+                        {
+                            <div class="mt-2">
+                                <button class="btn btn-sm btn-outline-success"
+                                        @onclick="UncancelOccurrence" disabled="@_actionInProgress">
+                                    Restore Session
+                                </button>
+                            </div>
+                        }
                     </div>
                 </div>
             }
@@ -277,6 +286,28 @@
         if (success)
         {
             _statusMessage = "Session cancelled.";
+            _isError = false;
+            await LoadEvent();
+            await OnEventChanged.InvokeAsync();
+        }
+        else
+        {
+            _statusMessage = error;
+            _isError = true;
+        }
+        _actionInProgress = false;
+    }
+
+    private async Task UncancelOccurrence()
+    {
+        if (_selectedOccurrence is null) return;
+        _actionInProgress = true;
+        _statusMessage = null;
+
+        var (success, error) = await EventService.UncancelOccurrenceAsync(_selectedOccurrence.Id, _currentUserId);
+        if (success)
+        {
+            _statusMessage = "Session restored.";
             _isError = false;
             await LoadEvent();
             await OnEventChanged.InvokeAsync();
