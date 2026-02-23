@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.RegularExpressions;
 using NodaTime;
 using SimpleOfficeScheduler.Models;
 
@@ -104,6 +105,68 @@ public class UseCase1_CreateEventTests : IntegrationTestBase
         }, JsonOptions);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task CreateEvent_WithRawIsoJson_ReturnsSuccess()
+    {
+        await LoginAsync();
+
+        // Simulate what curl/browser sends: raw JSON with standard ISO dates, no NodaTime serializer
+        var json = """
+        {
+            "title": "Raw JSON Event",
+            "description": "Created with plain ISO dates",
+            "startTime": "2099-03-15T09:00:00",
+            "endTime": "2099-03-15T10:00:00",
+            "capacity": 5
+        }
+        """;
+        var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+        var response = await Client.PostAsync("/api/events", content);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+
+        var evt = await response.Content.ReadFromJsonAsync<EventResponse>(JsonOptions);
+        Assert.NotNull(evt);
+        Assert.Equal("Raw JSON Event", evt!.Title);
+        Assert.Single(evt.Occurrences);
+    }
+
+    [Fact]
+    public async Task CreateEvent_PostToBlazorPage_DoesNotReturn400()
+    {
+        // Simulate what happens when the Blazor form does a native HTTP POST
+        // to /events/create (before the circuit connects).
+        // A real browser first GETs the page (which includes an antiforgery token),
+        // then submits the form with that token.
+        await LoginAsync();
+
+        // 1. GET the page to obtain the antiforgery token
+        var getResponse = await Client.GetAsync("/events/create");
+        var html = await getResponse.Content.ReadAsStringAsync();
+
+        // Extract the antiforgery token from the hidden input
+        var tokenMatch = Regex.Match(html, @"name=""__RequestVerificationToken""\s+value=""([^""]+)""");
+        Assert.True(tokenMatch.Success, "Page should contain an antiforgery token hidden input");
+        var token = tokenMatch.Groups[1].Value;
+
+        // 2. POST the form with the antiforgery token (simulating native browser submission)
+        var formData = new Dictionary<string, string>
+        {
+            ["__RequestVerificationToken"] = token,
+            ["_handler"] = "eventForm",
+            ["_model.Title"] = "Test Event",
+            ["_model.StartTime"] = "2099-03-15T09:00",
+            ["_model.EndTime"] = "2099-03-15T10:00",
+            ["_model.Capacity"] = "5",
+            ["_model.TimeZoneId"] = "America/New_York",
+        };
+        var formContent = new FormUrlEncodedContent(formData);
+        var response = await Client.PostAsync("/events/create", formContent);
+
+        // Should NOT be 400 Bad Request
+        Assert.NotEqual(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]

@@ -117,6 +117,13 @@ jobs:
         run: |
           set -e
 
+          # 0. Verify critical static assets are served
+          curl -sf http://localhost:8080/_framework/blazor.web.js > /dev/null \
+            || { echo "FAIL: blazor.web.js not served"; exit 1; }
+          curl -sf http://localhost:8080/js/fullcalendar-interop.js > /dev/null \
+            || { echo "FAIL: fullcalendar-interop.js not served"; exit 1; }
+          echo "Static asset checks OK"
+
           # 1. Login
           LOGIN=$(curl -sf -X POST http://localhost:8080/api/auth/login \
             -H "Content-Type: application/json" \

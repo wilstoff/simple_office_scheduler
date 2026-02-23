@@ -924,6 +924,42 @@ public class UITests : IClassFixture<PlaywrightWebAppFixture>, IAsyncLifetime
             "Should NOT show 'Title is required' when a valid title was entered");
     }
 
+    [Fact]
+    public async Task EventCreate_Form_Submit_Creates_Event_And_Navigates()
+    {
+        // Navigate to create event page
+        await _page.GotoAsync($"{_fixture.BaseUrl}/events/create");
+        await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+
+        // Wait for the Blazor circuit to be fully active
+        await _page.WaitForSelectorAsync("#title", new() { Timeout = 10000 });
+
+        // Fill in the form with valid data
+        await _page.Locator("#title").FillAsync("E2E Created Event");
+        await _page.Locator("#description").FillAsync("Created via Blazor form test");
+
+        // Submit the form
+        await _page.Locator("button[type='submit']").ClickAsync();
+
+        // Wait for navigation or error to appear
+        await _page.WaitForTimeoutAsync(5000);
+
+        var finalUrl = _page.Url;
+        var pageContent = await _page.ContentAsync();
+
+        // Check for error messages on the page
+        var errorMessages = await _page.Locator(".alert-danger").AllTextContentsAsync();
+        var validationErrors = await _page.Locator(".validation-summary-errors, .validation-message").AllTextContentsAsync();
+
+        Assert.True(
+            System.Text.RegularExpressions.Regex.IsMatch(finalUrl, @"/events/\d+$"),
+            $"Expected navigation to /events/{{id}} but ended up at: {finalUrl}. " +
+            $"Errors: [{string.Join(", ", errorMessages)}]. " +
+            $"Validation: [{string.Join(", ", validationErrors)}]");
+
+        Assert.Contains("E2E Created Event", pageContent);
+    }
+
     // ===== TDD TESTS: JS Bundle Loading =====
 
     [Fact]

@@ -24,7 +24,7 @@
     <div class="alert alert-success">@_successMessage</div>
 }
 
-<EditForm Model="_model" OnValidSubmit="HandleSubmit">
+<EditForm Model="_model" OnValidSubmit="HandleSubmit" FormName="eventForm">
     <DataAnnotationsValidator />
     <ValidationSummary />
 
@@ -151,7 +151,9 @@
     [Parameter]
     public int? EventId { get; set; }
 
-    private EventFormModel _model = new();
+    [SupplyParameterFromForm]
+    private EventFormModel? _model { get; set; }
+
     private string? _errorMessage;
     private string? _successMessage;
     private bool _isSubmitting;
@@ -180,6 +182,12 @@
     {
         _timeZones = TimeZoneHelper.GetCommonTimeZones();
 
+        // If _model was populated from a form POST ([SupplyParameterFromForm]), skip initialization
+        if (_model is not null)
+            return;
+
+        _model = new EventFormModel();
+
         if (_isEditMode)
         {
             var evt = await EventService.GetEventAsync(EventId!.Value);
@@ -189,20 +197,17 @@
                 return;
             }
 
-            _model = new EventFormModel
-            {
-                Title = evt.Title,
-                Description = evt.Description,
-                StartTime = evt.StartTime.ToDateTimeUnspecified(),
-                EndTime = evt.EndTime.ToDateTimeUnspecified(),
-                Capacity = evt.Capacity,
-                TimeZoneId = evt.TimeZoneId,
-                IsRecurring = evt.Recurrence is not null,
-                RecurrenceType = evt.Recurrence?.Type ?? RecurrenceType.Weekly,
-                Interval = evt.Recurrence?.Interval ?? 1,
-                DaysOfWeek = evt.Recurrence?.DaysOfWeek ?? new List<DayOfWeek>(),
-                RecurrenceEndDate = evt.Recurrence?.RecurrenceEndDate?.ToDateTimeUnspecified()
-            };
+            _model.Title = evt.Title;
+            _model.Description = evt.Description;
+            _model.StartTime = evt.StartTime.ToDateTimeUnspecified();
+            _model.EndTime = evt.EndTime.ToDateTimeUnspecified();
+            _model.Capacity = evt.Capacity;
+            _model.TimeZoneId = evt.TimeZoneId;
+            _model.IsRecurring = evt.Recurrence is not null;
+            _model.RecurrenceType = evt.Recurrence?.Type ?? RecurrenceType.Weekly;
+            _model.Interval = evt.Recurrence?.Interval ?? 1;
+            _model.DaysOfWeek = evt.Recurrence?.DaysOfWeek ?? new List<DayOfWeek>();
+            _model.RecurrenceEndDate = evt.Recurrence?.RecurrenceEndDate?.ToDateTimeUnspecified();
         }
         else
         {

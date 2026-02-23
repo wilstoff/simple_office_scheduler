@@ -106,8 +106,7 @@ if (!app.Environment.IsDevelopment())
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
 }
 
-app.MapStaticAssets();
-app.UseStaticFiles(); // Fallback for assets not in the MapStaticAssets manifest (e.g. esbuild output)
+app.UseStaticFiles();
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseAntiforgery();
