@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/wilstoff/simple_office_scheduler/actions/workflows/ci.yml/badge.svg)](https://github.com/wilstoff/simple_office_scheduler/actions/workflows/ci.yml)
 
-An office hours scheduling application built with ASP.NET Core 8 Blazor Server, SQLite, and FullCalendar.
+An office scheduling application built with ASP.NET Core 10 Blazor Server, SQLite, and FullCalendar.
 
 ## Quick Start (Docker)
 
@@ -100,7 +100,7 @@ docker run -d -p 8080:8080 \
 
 ### Prerequisites
 
-- .NET 8 SDK
+- .NET 10 SDK
 - Node.js 20+
 
 ### Run Locally
@@ -126,7 +126,7 @@ dotnet test
 
 ## Features
 
-- Create and manage office hour events (one-time or recurring)
+- Create and manage events (one-time or recurring)
 - Browse events with search and weekly calendar view (FullCalendar)
 - Sign up for events with capacity enforcement
 - Cancel specific instances of recurring events

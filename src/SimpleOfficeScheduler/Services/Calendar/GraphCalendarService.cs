@@ -92,7 +92,7 @@ public class GraphCalendarService : ICalendarInviteService
         await _graphClient.Users[owner.Email].Events[graphEventId].Cancel.PostAsync(
             new Microsoft.Graph.Users.Item.Events.Item.Cancel.CancelPostRequestBody
             {
-                Comment = "This office hours session has been cancelled."
+                Comment = "This event has been cancelled."
             });
 
         _logger.LogInformation("Cancelled Teams meeting {GraphEventId}", graphEventId);
