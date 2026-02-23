@@ -54,6 +54,49 @@ public class TimezoneUITests : IClassFixture<TimezonePlaywrightFixture>, IAsyncL
     }
 
     [Fact]
+    public async Task Calendar_TimeSlotSelection_PopulatesPanelWithWallClockTime()
+    {
+        // Use a browser context with a timezone far from the server's to expose the bug:
+        // FullCalendar sends info.startStr with the browser's UTC offset (e.g., +09:00).
+        // If DateTime.Parse on the server converts based on that offset, the panel
+        // shows a completely different time instead of the wall-clock time the user clicked.
+        var tzContext = await _fixture.Browser.NewContextAsync(new BrowserNewContextOptions
+        {
+            ViewportSize = new ViewportSize { Width = 1920, Height = 1080 },
+            StorageState = _fixture.AuthState,
+            TimezoneId = "Asia/Tokyo" // UTC+9, far from any US timezone
+        });
+        var tzPage = await tzContext.NewPageAsync();
+
+        try
+        {
+            await tzPage.GotoAsync($"{_fixture.BaseUrl}/");
+            await tzPage.WaitForLoadStateAsync(LoadState.NetworkIdle);
+            await tzPage.WaitForSelectorAsync(".fc-view", new() { Timeout = 10000 });
+
+            // Click the 9:00 AM time slot on the calendar to trigger a selection
+            var slot = tzPage.Locator("td.fc-timegrid-slot-lane[data-time='09:00:00']").First;
+            await slot.ClickAsync();
+
+            // Wait for the side panel to appear
+            await tzPage.WaitForSelectorAsync(".side-panel.show", new() { Timeout = 5000 });
+
+            // Read the start time from the panel's datetime-local input
+            var startInput = tzPage.Locator(".side-panel input[type='datetime-local']").First;
+            var startValue = await startInput.InputValueAsync();
+
+            // The user clicked 9:00 AM on the calendar grid.
+            // The panel should show 09:00, not 15:00 (UTC conversion of 9am CST).
+            Assert.True(startValue.Contains("T09:"),
+                $"Panel start time should be 09:xx (wall-clock time clicked), but got: {startValue}");
+        }
+        finally
+        {
+            await tzContext.DisposeAsync();
+        }
+    }
+
+    [Fact]
     public async Task EventCreate_DefaultDate_UsesUserTimezone_NotServerUtc()
     {
         // Set user's timezone preference to America/New_York via API

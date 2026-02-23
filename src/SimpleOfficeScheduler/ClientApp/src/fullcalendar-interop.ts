@@ -44,10 +44,16 @@ function createAndRenderCalendar(
         selectable: options.selectable ?? true,
         selectMirror: options.selectMirror ?? true,
         select: (info) => {
+            // Format as wall-clock time without timezone offset so .NET DateTime.Parse
+            // doesn't convert to the server's timezone (e.g., UTC in Docker)
+            const fmt = (d: Date): string => {
+                const p = (n: number) => n.toString().padStart(2, '0');
+                return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:00`;
+            };
             dotNetRef.invokeMethodAsync(
                 'OnTimeRangeSelected',
-                info.startStr,
-                info.endStr,
+                fmt(info.start),
+                fmt(info.end),
                 info.allDay
             );
             // Don't unselect — keep the highlight visible while the panel is open
