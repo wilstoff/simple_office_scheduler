@@ -106,6 +106,7 @@ if (!app.Environment.IsDevelopment())
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
 }
 
+app.UseStaticFiles();
 app.MapStaticAssets();
 app.UseAuthentication();
 app.UseAuthorization();
