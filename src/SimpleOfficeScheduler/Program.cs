@@ -26,7 +26,8 @@ builder.Services.AddSingleton<IClock>(SystemClock.Instance);
 
 // Database
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection"),
+        o => o.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery)));
 
 // Authentication services
 var adSettings = builder.Configuration.GetSection("ActiveDirectory").Get<ActiveDirectorySettings>();

@@ -57,7 +57,8 @@ public class PlaywrightWebAppFixture : IAsyncLifetime
 
         // Database (test SQLite)
         builder.Services.AddDbContext<AppDbContext>(options =>
-            options.UseSqlite($"Data Source={_dbPath}"));
+            options.UseSqlite($"Data Source={_dbPath}",
+                o => o.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery)));
 
         // Auth
         builder.Services.AddScoped<IAuthenticationService, LocalAuthService>();

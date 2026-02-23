@@ -21,6 +21,7 @@ src/SimpleOfficeScheduler/wwwroot/js/fullcalendar-interop.js.map
 
 ## IDE
 .idea/
+.claude/
 *.swp
 *~
 

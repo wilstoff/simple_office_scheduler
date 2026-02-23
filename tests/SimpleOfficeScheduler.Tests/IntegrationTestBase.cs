@@ -45,7 +45,8 @@ public class IntegrationTestBase : IAsyncLifetime
 
                     // Use a unique SQLite DB per test class
                     services.AddDbContext<AppDbContext>(options =>
-                        options.UseSqlite($"Data Source={_dbPath}"));
+                        options.UseSqlite($"Data Source={_dbPath}",
+                            o => o.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery)));
 
                     // Remove the background service to avoid interference
                     var bgService = services.SingleOrDefault(
