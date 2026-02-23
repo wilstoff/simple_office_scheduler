@@ -32,12 +32,12 @@
             <EditForm Model="Input" OnValidSubmit="HandleLogin" FormName="login">
                 <div class="mb-3">
                     <label for="username" class="form-label">Username</label>
-                    <InputText id="username" class="form-control" @bind-Value="Input.Username" />
+                    <InputText id="username" class="form-control" @bind-Value="Input!.Username" />
                 </div>
 
                 <div class="mb-3">
                     <label for="password" class="form-label">Password</label>
-                    <InputText id="password" type="password" class="form-control" @bind-Value="Input.Password" />
+                    <InputText id="password" type="password" class="form-control" @bind-Value="Input!.Password" />
                 </div>
 
                 <button type="submit" class="btn btn-primary w-100">Sign in</button>
@@ -48,14 +48,16 @@
 
 @code {
     [SupplyParameterFromForm]
-    private LoginModel Input { get; set; } = new();
+    private LoginModel? Input { get; set; }
 
     private string? _errorMessage;
+
+    protected override void OnInitialized() => Input ??= new();
 
     private async Task HandleLogin()
     {
         var httpContext = HttpContextAccessor.HttpContext;
-        if (httpContext is null) return;
+        if (httpContext is null || Input is null) return;
 
         var result = await AuthService.ValidateAsync(Input.Username, Input.Password);
 
