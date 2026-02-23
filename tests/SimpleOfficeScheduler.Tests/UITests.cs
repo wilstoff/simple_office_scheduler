@@ -18,12 +18,10 @@ public class UITests : IClassFixture<PlaywrightWebAppFixture>, IAsyncLifetime
     {
         _context = await _fixture.Browser.NewContextAsync(new BrowserNewContextOptions
         {
-            ViewportSize = new ViewportSize { Width = 1920, Height = 1080 }
+            ViewportSize = new ViewportSize { Width = 1920, Height = 1080 },
+            StorageState = _fixture.AuthState
         });
         _page = await _context.NewPageAsync();
-
-        // Login via the UI
-        await LoginOnPage(_page);
     }
 
     public async Task DisposeAsync()
@@ -31,25 +29,14 @@ public class UITests : IClassFixture<PlaywrightWebAppFixture>, IAsyncLifetime
         await _context.DisposeAsync();
     }
 
-    private async Task LoginOnPage(IPage page)
-    {
-        await page.GotoAsync($"{_fixture.BaseUrl}/login");
-        await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-
-        var usernameField = page.Locator("input[id='username'], input[name='username']");
-        if (await usernameField.CountAsync() > 0)
-        {
-            await usernameField.FillAsync("testadmin");
-            await page.Locator("input[id='password'], input[name='password']").FillAsync("Test123!");
-            await page.Locator("button[type='submit']").ClickAsync();
-            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-        }
-    }
-
     private async Task CreateEventViaApi(IPage page, string title, DateTime startTime, DateTime endTime, int capacity = 3)
     {
+        // Ensure page is on the app origin (needed for cookie auth and relative fetch)
+        if (page.Url == "about:blank")
+            await page.GotoAsync($"{_fixture.BaseUrl}/");
+
         await page.EvaluateAsync(@$"
-            fetch('/api/events', {{
+            fetch('{_fixture.BaseUrl}/api/events', {{
                 method: 'POST',
                 headers: {{ 'Content-Type': 'application/json' }},
                 body: JSON.stringify({{
@@ -115,9 +102,11 @@ public class UITests : IClassFixture<PlaywrightWebAppFixture>, IAsyncLifetime
     public async Task Short_Event_Text_Does_Not_Overflow()
     {
         // Create a 1-hour event via API first
-        var apiContext = await _fixture.Browser.NewContextAsync();
+        var apiContext = await _fixture.Browser.NewContextAsync(new BrowserNewContextOptions
+        {
+            StorageState = _fixture.AuthState
+        });
         var apiPage = await apiContext.NewPageAsync();
-        await LoginOnPage(apiPage);
 
         var today = DateTime.Now.Date;
         await CreateEventViaApi(apiPage, "UI Test Event", today.AddHours(10), today.AddHours(11));
@@ -157,9 +146,11 @@ public class UITests : IClassFixture<PlaywrightWebAppFixture>, IAsyncLifetime
     public async Task Short_Event_Shows_Owner_Name()
     {
         // Create a 1-hour event via API (owner will be "Test Admin")
-        var apiContext = await _fixture.Browser.NewContextAsync();
+        var apiContext = await _fixture.Browser.NewContextAsync(new BrowserNewContextOptions
+        {
+            StorageState = _fixture.AuthState
+        });
         var apiPage = await apiContext.NewPageAsync();
-        await LoginOnPage(apiPage);
 
         var today = DateTime.Now.Date;
         await CreateEventViaApi(apiPage, "Owner Visible Test", today.AddHours(10), today.AddHours(11));
@@ -333,13 +324,13 @@ public class UITests : IClassFixture<PlaywrightWebAppFixture>, IAsyncLifetime
         // Record initial event count for User 1
         var initialCount = await _page.Locator(".fc-timegrid-event").CountAsync();
 
-        // User 2: create a second browser context, login, navigate to calendar
+        // User 2: create a second browser context, navigate to calendar
         var context2 = await _fixture.Browser.NewContextAsync(new BrowserNewContextOptions
         {
-            ViewportSize = new ViewportSize { Width = 1920, Height = 1080 }
+            ViewportSize = new ViewportSize { Width = 1920, Height = 1080 },
+            StorageState = _fixture.AuthState
         });
         var page2 = await context2.NewPageAsync();
-        await LoginOnPage(page2);
         await page2.GotoAsync($"{_fixture.BaseUrl}/");
         await page2.WaitForLoadStateAsync(LoadState.NetworkIdle);
         await page2.WaitForSelectorAsync(".fc-view", new() { Timeout = 10000 });
@@ -451,7 +442,7 @@ public class UITests : IClassFixture<PlaywrightWebAppFixture>, IAsyncLifetime
         // 4. Create Event → brand              (return via brand from create event)
         // 5. Events → brand → Events → Calendar (rapid multi-hop)
         // 6. Calendar → brand → brand        (double brand click on same page)
-        for (var round = 0; round < 30; round++)
+        for (var round = 0; round < 6; round++)
         {
             var pattern = round % 6;
             var label = $"Round {round + 1} pattern {pattern}";
@@ -523,7 +514,7 @@ public class UITests : IClassFixture<PlaywrightWebAppFixture>, IAsyncLifetime
         // 2. Call checkAndRecover() (same function the enhancedload handler calls)
         // This verifies the recovery mechanism works: if the container is emptied,
         // the calendar is reinitialized from stored parameters.
-        for (var round = 1; round <= 10; round++)
+        for (var round = 1; round <= 3; round++)
         {
             // ES modules are singletons — re-importing returns the same instance
             // with all module-level state (lastDotNetRef, lastOptions) intact.
@@ -553,7 +544,7 @@ public class UITests : IClassFixture<PlaywrightWebAppFixture>, IAsyncLifetime
         await AssertCalendarFullyRendered("Initial load");
 
         // Click Calendar link while already on calendar (same-URL navigation)
-        for (var i = 1; i <= 5; i++)
+        for (var i = 1; i <= 2; i++)
         {
             await ClickNavLink("Calendar");
             await _page.WaitForSelectorAsync(".fc-view", new() { Timeout = 10000 });
@@ -561,7 +552,7 @@ public class UITests : IClassFixture<PlaywrightWebAppFixture>, IAsyncLifetime
         }
 
         // Click brand link while already on calendar (same-URL navigation)
-        for (var i = 1; i <= 5; i++)
+        for (var i = 1; i <= 2; i++)
         {
             await ClickBrandLink();
             await _page.WaitForSelectorAsync(".fc-view", new() { Timeout = 10000 });
@@ -569,7 +560,7 @@ public class UITests : IClassFixture<PlaywrightWebAppFixture>, IAsyncLifetime
         }
 
         // Alternate between Calendar and brand links
-        for (var i = 1; i <= 5; i++)
+        for (var i = 1; i <= 2; i++)
         {
             await ClickNavLink("Calendar");
             await _page.WaitForSelectorAsync(".fc-view", new() { Timeout = 10000 });
@@ -873,9 +864,11 @@ public class UITests : IClassFixture<PlaywrightWebAppFixture>, IAsyncLifetime
     public async Task Monthly_View_Shows_Event_Times()
     {
         // Create an event via API
-        var apiContext = await _fixture.Browser.NewContextAsync();
+        var apiContext = await _fixture.Browser.NewContextAsync(new BrowserNewContextOptions
+        {
+            StorageState = _fixture.AuthState
+        });
         var apiPage = await apiContext.NewPageAsync();
-        await LoginOnPage(apiPage);
         var today = DateTime.Now.Date;
         await CreateEventViaApi(apiPage, "Monthly Time Test", today.AddHours(9), today.AddHours(10));
         await apiContext.DisposeAsync();

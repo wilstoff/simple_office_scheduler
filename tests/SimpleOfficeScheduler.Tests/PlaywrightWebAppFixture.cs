@@ -26,6 +26,7 @@ public class PlaywrightWebAppFixture : IAsyncLifetime
 
     public string BaseUrl { get; private set; } = string.Empty;
     public IBrowser Browser => _browser ?? throw new InvalidOperationException("Browser not initialized");
+    public string AuthState { get; private set; } = string.Empty;
 
     private readonly string _dbPath = Path.Combine(
         Path.GetTempPath(), $"scheduler_uitest_{Guid.NewGuid():N}.db");
@@ -157,6 +158,18 @@ public class PlaywrightWebAppFixture : IAsyncLifetime
         {
             Headless = true
         });
+
+        // Capture authenticated state for reuse across all tests
+        var authContext = await _browser.NewContextAsync();
+        var authPage = await authContext.NewPageAsync();
+        await authPage.GotoAsync($"{BaseUrl}/login");
+        await authPage.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await authPage.Locator("input[id='username'], input[name='username']").FillAsync("testadmin");
+        await authPage.Locator("input[id='password'], input[name='password']").FillAsync("Test123!");
+        await authPage.Locator("button[type='submit']").ClickAsync();
+        await authPage.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        AuthState = await authContext.StorageStateAsync();
+        await authContext.DisposeAsync();
     }
 
     public async Task DisposeAsync()
