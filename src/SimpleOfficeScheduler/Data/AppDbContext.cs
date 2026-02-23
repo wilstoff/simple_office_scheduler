@@ -69,7 +69,12 @@ public class AppDbContext : DbContext
                     .HasConversion(
                         v => System.Text.Json.JsonSerializer.Serialize(v, (System.Text.Json.JsonSerializerOptions?)null),
                         v => System.Text.Json.JsonSerializer.Deserialize<List<DayOfWeek>>(v, (System.Text.Json.JsonSerializerOptions?)null) ?? new List<DayOfWeek>()
-                    );
+                    )
+                    .Metadata.SetValueComparer(
+                        new Microsoft.EntityFrameworkCore.ChangeTracking.ValueComparer<List<DayOfWeek>>(
+                            (a, b) => a != null && b != null && a.SequenceEqual(b),
+                            c => c.Aggregate(0, (hash, v) => HashCode.Combine(hash, v.GetHashCode())),
+                            c => c.ToList()));
             });
         });
 
