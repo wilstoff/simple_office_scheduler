@@ -15,6 +15,7 @@ using SimpleOfficeScheduler.Services.Calendar;
 using SimpleOfficeScheduler.Services.Events;
 using SimpleOfficeScheduler.Services;
 using SimpleOfficeScheduler.Services.Recurrence;
+using SimpleOfficeScheduler.Services.Users;
 
 namespace SimpleOfficeScheduler.Tests;
 
@@ -83,6 +84,7 @@ public class PlaywrightWebAppFixture : IAsyncLifetime
         builder.Services.AddScoped<ICalendarInviteService, NoOpCalendarService>();
         builder.Services.AddScoped<RecurrenceExpander>();
         builder.Services.AddScoped<IEventService, EventService>();
+        builder.Services.AddScoped<IUserSearchService, UserSearchService>();
         builder.Services.AddScoped<DbSeeder>();
         // No RecurrenceExpansionBackgroundService for testing
 
