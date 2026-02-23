@@ -211,9 +211,7 @@
         }
         else
         {
-            _model.StartTime = DateTime.Now.Date.AddDays(1).AddHours(9);
-            _model.EndTime = DateTime.Now.Date.AddDays(1).AddHours(10);
-
+            // Detect timezone FIRST (before computing default times)
             // Timezone cascade: DB preference > browser > server
             string? userTzPref = null;
             var authState = await AuthStateProvider.GetAuthenticationStateAsync();
@@ -241,6 +239,10 @@
                     _model.TimeZoneId = TimeZoneHelper.GetLocalTimeZoneId();
                 }
             }
+
+            // Compute default times in the user's timezone, not the server's
+            var now = NodaTime.SystemClock.Instance.GetCurrentInstant();
+            (_model.StartTime, _model.EndTime) = TimeZoneHelper.GetDefaultEventTimes(_model.TimeZoneId, now);
         }
     }
 

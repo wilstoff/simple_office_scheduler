@@ -2,6 +2,7 @@ using System.Net.Http.Json;
 using NodaTime;
 using NodaTime.Serialization.SystemTextJson;
 using SimpleOfficeScheduler.Models;
+using SimpleOfficeScheduler.Services;
 
 namespace SimpleOfficeScheduler.Tests;
 
@@ -168,5 +169,33 @@ public class TimezoneTests : IntegrationTestBase
         Assert.Equal(14, occ.StartTime.Hour);
         var startUtcDt = occ.StartTimeUtc.ToDateTimeUtc();
         Assert.Equal(18, startUtcDt.Hour);
+    }
+
+    [Fact]
+    public void GetDefaultEventTimes_ComputesTomorrowInUserTimezone()
+    {
+        // 03:00 UTC on June 15 = 23:00 EDT on June 14 in New York
+        var now = Instant.FromUtc(2026, 6, 15, 3, 0);
+
+        var (start, end) = TimeZoneHelper.GetDefaultEventTimes("America/New_York", now);
+
+        // "Tomorrow" in New York is June 15 (today there is June 14)
+        Assert.Equal(new DateTime(2026, 6, 15, 9, 0, 0), start);
+        Assert.Equal(new DateTime(2026, 6, 15, 10, 0, 0), end);
+    }
+
+    [Fact]
+    public void GetDefaultEventTimes_ServerUtcGivesDifferentDateThanUserTimezone()
+    {
+        // 03:00 UTC on June 15 — same instant, different local dates
+        var now = Instant.FromUtc(2026, 6, 15, 3, 0);
+
+        var (utcStart, _) = TimeZoneHelper.GetDefaultEventTimes("Etc/UTC", now);
+        var (nyStart, _) = TimeZoneHelper.GetDefaultEventTimes("America/New_York", now);
+
+        // UTC "today" = June 15, so "tomorrow" = June 16
+        Assert.Equal(16, utcStart.Day);
+        // New York "today" = June 14, so "tomorrow" = June 15
+        Assert.Equal(15, nyStart.Day);
     }
 }

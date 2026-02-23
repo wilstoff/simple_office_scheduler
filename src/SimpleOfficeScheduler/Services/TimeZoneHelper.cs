@@ -41,6 +41,21 @@ public static class TimeZoneHelper
     }
 
     /// <summary>
+    /// Computes default event start/end times ("tomorrow 9am-10am") in the given timezone.
+    /// Uses the provided Instant to determine "today" in the user's timezone, avoiding
+    /// server-timezone dependency (e.g., UTC in Docker).
+    /// </summary>
+    public static (DateTime Start, DateTime End) GetDefaultEventTimes(string timeZoneId, Instant now)
+    {
+        var zone = GetZone(timeZoneId);
+        var localNow = now.InZone(zone).LocalDateTime;
+        var tomorrow = localNow.Date.PlusDays(1);
+        var start = tomorrow.At(new LocalTime(9, 0)).ToDateTimeUnspecified();
+        var end = tomorrow.At(new LocalTime(10, 0)).ToDateTimeUnspecified();
+        return (start, end);
+    }
+
+    /// <summary>
     /// Converts a wall-clock DateTime in the given timezone to UTC.
     /// NodaTime handles DST gaps and ambiguous times automatically.
     /// </summary>
