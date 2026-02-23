@@ -10,6 +10,7 @@ using SimpleOfficeScheduler.Services.Auth;
 using SimpleOfficeScheduler.Services.Calendar;
 using SimpleOfficeScheduler.Services.Events;
 using SimpleOfficeScheduler.Services;
+using Microsoft.AspNetCore.DataProtection;
 using SimpleOfficeScheduler.Services.Recurrence;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -49,6 +50,14 @@ builder.Services.AddAuthentication("Cookies")
         options.ExpireTimeSpan = TimeSpan.FromHours(8);
     });
 builder.Services.AddAuthorization();
+
+// Persist Data Protection keys so antiforgery tokens survive container restarts
+var dbPath = builder.Configuration.GetConnectionString("DefaultConnection")
+    ?.Replace("Data Source=", "") ?? "officeScheduler.db";
+var keysDir = Path.Combine(Path.GetDirectoryName(dbPath) ?? ".", "keys");
+builder.Services.AddDataProtection()
+    .PersistKeysToFileSystem(new DirectoryInfo(keysDir));
+
 builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddScoped<AuthenticationStateProvider, CustomAuthStateProvider>();
 
