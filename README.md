@@ -86,7 +86,7 @@ docker run -d -p 8080:8080 \
   -e ActiveDirectory__SearchBase="DC=mycompany,DC=com" \
   -e ActiveDirectory__ServiceAccountDn="CN=svc_scheduler,OU=Service Accounts,DC=mycompany,DC=com" \
   -e ActiveDirectory__ServiceAccountPassword="s3cret" \
-  simple-office-scheduler
+  ghcr.io/wilstoff/simple_office_scheduler:latest
 ```
 
 ### Alternative: Mount a Config File
@@ -97,7 +97,7 @@ Instead of environment variables, mount a custom appsettings file:
 docker run -d -p 8080:8080 \
   -v scheduler-data:/app/data \
   -v ./my-appsettings.json:/app/appsettings.Production.json:ro \
-  simple-office-scheduler
+  ghcr.io/wilstoff/simple_office_scheduler:latest
 ```
 
 ## Development Setup
