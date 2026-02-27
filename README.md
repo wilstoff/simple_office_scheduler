@@ -53,10 +53,17 @@ All settings can be overridden with environment variables using the `__` (double
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `GraphApi__TenantId` | *(empty)* | Azure AD tenant ID |
-| `GraphApi__ClientId` | *(empty)* | Graph API application client ID |
-| `GraphApi__ClientSecret` | *(empty)* | Graph API client secret |
+| `GraphApi__ClientId` | *(empty)* | Azure app registration client ID |
+| `GraphApi__ClientSecret` | *(empty)* | Client secret (application permissions mode) |
+| `GraphApi__ServiceAccountEmail` | *(empty)* | Service account email (delegated permissions mode) |
+| `GraphApi__ServiceAccountPassword` | *(empty)* | Service account password (delegated permissions mode) |
 
-When Graph API credentials are not set, calendar invite functionality is disabled.
+Two authentication modes are supported:
+
+- **Delegated (ROPC)**: Set `ServiceAccountEmail` + `ServiceAccountPassword`. The app authenticates as the service account and creates meetings on its own calendar, adding event participants as attendees. Only requires Delegated `Calendars.ReadWrite` permission — no admin consent needed. The service account must be MFA-exempt and the app registration must have "Allow public client flows" enabled.
+- **Application**: Set `ClientSecret` instead. The app creates meetings directly on event owners' calendars using Application `Calendars.ReadWrite` permission. Requires admin consent.
+
+When neither mode is configured, calendar invite functionality is disabled.
 
 ### Seed User
 
@@ -76,7 +83,7 @@ When Graph API credentials are not set, calendar invite functionality is disable
 | `Recurrence__DefaultHorizonMonths` | `6` | Months ahead to expand recurring events |
 | `Timezone__DefaultTimeZoneId` | `America/Chicago` | Default IANA timezone |
 
-### Production Example (with Active Directory)
+### Production Example (with Active Directory + Teams Calendar)
 
 ```bash
 docker run -d -p 8080:8080 \
@@ -86,6 +93,10 @@ docker run -d -p 8080:8080 \
   -e ActiveDirectory__SearchBase="DC=mycompany,DC=com" \
   -e ActiveDirectory__ServiceAccountDn="CN=svc_scheduler,OU=Service Accounts,DC=mycompany,DC=com" \
   -e ActiveDirectory__ServiceAccountPassword="s3cret" \
+  -e GraphApi__TenantId="your-tenant-id" \
+  -e GraphApi__ClientId="your-client-id" \
+  -e GraphApi__ServiceAccountEmail="scheduler@mycompany.com" \
+  -e GraphApi__ServiceAccountPassword="svc-password" \
   ghcr.io/wilstoff/simple_office_scheduler:latest
 ```
 
