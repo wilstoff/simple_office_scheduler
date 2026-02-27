@@ -48,7 +48,7 @@ public class GraphCalendarServiceTests : IDisposable
     }
 
     [Fact]
-    public void CalendarTargetEmail_Is_Owner_In_ApplicationMode()
+    public void CalendarTargetEmail_Is_Owner_When_No_TargetMailbox()
     {
         var settings = Options.Create(new GraphApiSettings
         {
@@ -63,19 +63,19 @@ public class GraphCalendarServiceTests : IDisposable
     }
 
     [Fact]
-    public void CalendarTargetEmail_Is_ServiceAccount_In_DelegatedMode()
+    public void CalendarTargetEmail_Is_TargetMailbox_When_Set()
     {
         var settings = Options.Create(new GraphApiSettings
         {
             TenantId = "t",
             ClientId = "c",
-            ServiceAccountEmail = "svc@test.com",
-            ServiceAccountPassword = "pwd"
+            ClientSecret = "s",
+            TargetMailbox = "simple_office_scheduler@test.com"
         });
         var service = new GraphCalendarService(settings, NullLogger<GraphCalendarService>.Instance);
         var owner = new AppUser { Email = "owner@test.com" };
 
-        Assert.Equal("svc@test.com", service.GetCalendarTargetEmail(owner));
+        Assert.Equal("simple_office_scheduler@test.com", service.GetCalendarTargetEmail(owner));
     }
 
     [Fact]
@@ -91,51 +91,5 @@ public class GraphCalendarServiceTests : IDisposable
         var service = scope.ServiceProvider.GetRequiredService<ICalendarInviteService>();
 
         Assert.IsType<NoOpCalendarService>(service);
-    }
-
-    [Fact]
-    public void UseDelegatedAuth_True_When_ServiceAccount_Configured()
-    {
-        var settings = new GraphApiSettings
-        {
-            TenantId = "t",
-            ClientId = "c",
-            ServiceAccountEmail = "svc@test.com",
-            ServiceAccountPassword = "pwd"
-        };
-
-        Assert.True(settings.UseDelegatedAuth);
-    }
-
-    [Fact]
-    public void UseDelegatedAuth_False_When_No_ServiceAccount()
-    {
-        var settings = new GraphApiSettings
-        {
-            TenantId = "t",
-            ClientId = "c",
-            ClientSecret = "s"
-        };
-
-        Assert.False(settings.UseDelegatedAuth);
-    }
-
-    [Fact]
-    public void DI_Condition_Selects_Graph_When_ServiceAccount_Without_ClientSecret()
-    {
-        // This tests the exact condition used in Program.cs
-        var settings = new GraphApiSettings
-        {
-            TenantId = "fake-tenant",
-            ClientId = "fake-client",
-            ServiceAccountEmail = "svc@test.com",
-            ServiceAccountPassword = "password"
-        };
-
-        var shouldUseGraph = !string.IsNullOrEmpty(settings.ClientId) &&
-                             !string.IsNullOrEmpty(settings.TenantId) &&
-                             (!string.IsNullOrEmpty(settings.ClientSecret) || settings.UseDelegatedAuth);
-
-        Assert.True(shouldUseGraph);
     }
 }

@@ -54,16 +54,12 @@ All settings can be overridden with environment variables using the `__` (double
 |----------|---------|-------------|
 | `GraphApi__TenantId` | *(empty)* | Azure AD tenant ID |
 | `GraphApi__ClientId` | *(empty)* | Azure app registration client ID |
-| `GraphApi__ClientSecret` | *(empty)* | Client secret (application permissions mode) |
-| `GraphApi__ServiceAccountEmail` | *(empty)* | Service account email (delegated permissions mode) |
-| `GraphApi__ServiceAccountPassword` | *(empty)* | Service account password (delegated permissions mode) |
+| `GraphApi__ClientSecret` | *(empty)* | Graph API client secret |
+| `GraphApi__TargetMailbox` | *(empty)* | Mailbox to create meetings on (e.g. a shared mailbox). If empty, uses event owner's mailbox. |
 
-Two authentication modes are supported:
+When `TenantId`, `ClientId`, and `ClientSecret` are all set, the app creates Teams calendar invites via Microsoft Graph. Set `TargetMailbox` to create all meetings on a dedicated mailbox (recommended with Application Access Policy to restrict access).
 
-- **Delegated (ROPC)**: Set `ServiceAccountEmail` + `ServiceAccountPassword`. The app authenticates as the service account and creates meetings on its own calendar, adding event participants as attendees. Only requires Delegated `Calendars.ReadWrite` permission — no admin consent needed. The service account must be MFA-exempt and the app registration must have "Allow public client flows" enabled.
-- **Application**: Set `ClientSecret` instead. The app creates meetings directly on event owners' calendars using Application `Calendars.ReadWrite` permission. Requires admin consent.
-
-When neither mode is configured, calendar invite functionality is disabled.
+When credentials are not set, calendar invite functionality is disabled.
 
 ### Seed User
 
@@ -95,8 +91,8 @@ docker run -d -p 8080:8080 \
   -e ActiveDirectory__ServiceAccountPassword="s3cret" \
   -e GraphApi__TenantId="your-tenant-id" \
   -e GraphApi__ClientId="your-client-id" \
-  -e GraphApi__ServiceAccountEmail="scheduler@mycompany.com" \
-  -e GraphApi__ServiceAccountPassword="svc-password" \
+  -e GraphApi__ClientSecret="your-client-secret" \
+  -e GraphApi__TargetMailbox="simple_office_scheduler@mycompany.com" \
   ghcr.io/wilstoff/simple_office_scheduler:latest
 ```
 

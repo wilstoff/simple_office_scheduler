@@ -17,10 +17,7 @@ public class GraphApiSettings
     public string TenantId { get; set; } = string.Empty;
     public string ClientId { get; set; } = string.Empty;
     public string ClientSecret { get; set; } = string.Empty;
-    public string ServiceAccountEmail { get; set; } = string.Empty;
-    public string ServiceAccountPassword { get; set; } = string.Empty;
-    public bool UseDelegatedAuth =>
-        !string.IsNullOrEmpty(ServiceAccountEmail) && !string.IsNullOrEmpty(ServiceAccountPassword);
+    public string TargetMailbox { get; set; } = string.Empty;
 }
 
 public class SeedUserSettings

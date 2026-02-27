@@ -1,4 +1,3 @@
-using Azure.Core;
 using Azure.Identity;
 using Microsoft.Extensions.Options;
 using Microsoft.Graph;
@@ -19,37 +18,22 @@ public class GraphCalendarService : ICalendarInviteService
         _logger = logger;
         _settings = settings.Value;
 
-        TokenCredential credential;
-        if (_settings.UseDelegatedAuth)
-        {
-            credential = new UsernamePasswordCredential(
-                _settings.ServiceAccountEmail,
-                _settings.ServiceAccountPassword,
-                _settings.TenantId,
-                _settings.ClientId);
-            _logger.LogInformation("Graph calendar using delegated auth (ROPC) with service account {Email}",
-                _settings.ServiceAccountEmail);
-        }
-        else
-        {
-            credential = new ClientSecretCredential(
-                _settings.TenantId,
-                _settings.ClientId,
-                _settings.ClientSecret);
-            _logger.LogInformation("Graph calendar using application auth (client credentials)");
-        }
-
+        var credential = new ClientSecretCredential(
+            _settings.TenantId,
+            _settings.ClientId,
+            _settings.ClientSecret);
         _graphClient = new GraphServiceClient(credential);
     }
 
     /// <summary>
     /// Returns the email of the mailbox to target for calendar operations.
-    /// In delegated mode, this is the service account. In application mode, this is the event owner.
+    /// When TargetMailbox is configured, all operations use that mailbox.
+    /// Otherwise, operations target the event owner's mailbox.
     /// </summary>
     internal string GetCalendarTargetEmail(AppUser owner)
     {
-        return _settings.UseDelegatedAuth
-            ? _settings.ServiceAccountEmail
+        return !string.IsNullOrEmpty(_settings.TargetMailbox)
+            ? _settings.TargetMailbox
             : owner.Email;
     }
 
