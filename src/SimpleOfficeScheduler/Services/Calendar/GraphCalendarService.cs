@@ -94,6 +94,26 @@ public class GraphCalendarService : ICalendarInviteService
             newSignee.Email, graphEventId);
     }
 
+    public async Task RemoveAttendeeAsync(string graphEventId, AppUser attendeeToRemove)
+    {
+        var targetEmail = _settings.TargetMailbox;
+
+        var existing = await _graphClient.Users[targetEmail].Events[graphEventId].GetAsync();
+        if (existing is null) return;
+
+        var attendees = existing.Attendees?.ToList() ?? new List<Attendee>();
+        attendees.RemoveAll(a =>
+            string.Equals(a.EmailAddress?.Address, attendeeToRemove.Email, StringComparison.OrdinalIgnoreCase));
+
+        await _graphClient.Users[targetEmail].Events[graphEventId].PatchAsync(new GraphEvent
+        {
+            Attendees = attendees
+        });
+
+        _logger.LogInformation("Removed attendee {Email} from Teams meeting {GraphEventId}",
+            attendeeToRemove.Email, graphEventId);
+    }
+
     public async Task CancelMeetingAsync(string graphEventId, AppUser owner)
     {
         var targetEmail = _settings.TargetMailbox;

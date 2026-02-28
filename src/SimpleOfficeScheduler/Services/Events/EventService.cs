@@ -191,6 +191,22 @@ public class EventService : IEventService
         _db.EventSignups.Remove(signup);
         await _db.SaveChangesAsync();
 
+        // Remove from calendar invite
+        var occurrence = await _db.EventOccurrences.FindAsync(occurrenceId);
+        if (!string.IsNullOrEmpty(occurrence?.GraphEventId))
+        {
+            try
+            {
+                var user = await _db.Users.FindAsync(userId);
+                if (user is not null)
+                    await _calendarService.RemoveAttendeeAsync(occurrence.GraphEventId, user);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to remove attendee from calendar invite for occurrence {OccurrenceId}", occurrenceId);
+            }
+        }
+
         return (true, null);
     }
 

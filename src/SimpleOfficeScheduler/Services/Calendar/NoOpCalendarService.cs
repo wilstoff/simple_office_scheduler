@@ -25,6 +25,13 @@ public class NoOpCalendarService : ICalendarInviteService
         return Task.CompletedTask;
     }
 
+    public Task RemoveAttendeeAsync(string graphEventId, AppUser attendeeToRemove)
+    {
+        _logger.LogInformation("DEV: Would remove attendee {Email} from meeting {GraphEventId}",
+            attendeeToRemove.Email, graphEventId);
+        return Task.CompletedTask;
+    }
+
     public Task CancelMeetingAsync(string graphEventId, AppUser owner)
     {
         _logger.LogInformation("DEV: Would cancel meeting {GraphEventId}", graphEventId);
