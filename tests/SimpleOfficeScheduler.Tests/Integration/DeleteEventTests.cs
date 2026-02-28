@@ -8,7 +8,7 @@ using SimpleOfficeScheduler.Models;
 
 namespace SimpleOfficeScheduler.Tests;
 
-public class UseCase7_DeleteEventTests : IntegrationTestBase
+public class DeleteEventTests : IntegrationTestBase
 {
     [Fact]
     public async Task OwnerDeletesEvent_Returns200()

@@ -5,7 +5,7 @@ using SimpleOfficeScheduler.Models;
 
 namespace SimpleOfficeScheduler.Tests;
 
-public class UseCase4_CancelInstanceTests : IntegrationTestBase
+public class CancelInstanceTests : IntegrationTestBase
 {
     [Fact]
     public async Task OwnerCancelsOccurrence_SetsCancelledFlag()

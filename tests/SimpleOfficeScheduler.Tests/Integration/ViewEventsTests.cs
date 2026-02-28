@@ -4,7 +4,7 @@ using SimpleOfficeScheduler.Models;
 
 namespace SimpleOfficeScheduler.Tests;
 
-public class UseCase2_ViewEventsTests : IntegrationTestBase
+public class ViewEventsTests : IntegrationTestBase
 {
     [Fact]
     public async Task SearchByTitle_FindsMatchingEvents()

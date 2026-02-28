@@ -5,7 +5,7 @@ using SimpleOfficeScheduler.Models;
 
 namespace SimpleOfficeScheduler.Tests;
 
-public class UseCase6_OccurrenceDetailTests : IntegrationTestBase
+public class OccurrenceDetailTests : IntegrationTestBase
 {
     [Fact]
     public async Task CalendarFeed_EachOccurrenceHasDistinctId()

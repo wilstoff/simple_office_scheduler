@@ -8,7 +8,7 @@ using SimpleOfficeScheduler.Models;
 
 namespace SimpleOfficeScheduler.Tests;
 
-public class UseCase5_AdjustScheduleTests : IntegrationTestBase
+public class AdjustScheduleTests : IntegrationTestBase
 {
     [Fact]
     public async Task OwnerUpdatesTitle_ChangesPersisted()

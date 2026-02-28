@@ -6,7 +6,7 @@ using SimpleOfficeScheduler.Models;
 
 namespace SimpleOfficeScheduler.Tests;
 
-public class UseCase1_CreateEventTests : IntegrationTestBase
+public class CreateEventTests : IntegrationTestBase
 {
     [Fact]
     public async Task CreateSingleEvent_ReturnsEventWithOneOccurrence()

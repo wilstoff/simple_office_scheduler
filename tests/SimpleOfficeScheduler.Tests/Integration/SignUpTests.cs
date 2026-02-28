@@ -4,7 +4,7 @@ using SimpleOfficeScheduler.Models;
 
 namespace SimpleOfficeScheduler.Tests;
 
-public class UseCase3_SignUpTests : IntegrationTestBase
+public class SignUpTests : IntegrationTestBase
 {
     [Fact]
     public async Task SignUp_Success_IncreasesSignupCount()
