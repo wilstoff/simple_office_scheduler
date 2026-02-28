@@ -55,11 +55,11 @@ All settings can be overridden with environment variables using the `__` (double
 | `GraphApi__TenantId` | *(empty)* | Azure AD tenant ID |
 | `GraphApi__ClientId` | *(empty)* | Azure app registration client ID |
 | `GraphApi__ClientSecret` | *(empty)* | Graph API client secret |
-| `GraphApi__TargetMailbox` | *(empty)* | Mailbox to create meetings on (e.g. a shared mailbox). If empty, uses event owner's mailbox. |
+| `GraphApi__TargetMailbox` | *(empty)* | Shared mailbox to create meetings on (e.g. `simple_office_scheduler@mycompany.com`) |
 
-When `TenantId`, `ClientId`, and `ClientSecret` are all set, the app creates Teams calendar invites via Microsoft Graph. Set `TargetMailbox` to create all meetings on a dedicated mailbox (recommended with Application Access Policy to restrict access).
+When all four settings (`TenantId`, `ClientId`, `ClientSecret`, `TargetMailbox`) are set, the app creates Teams calendar invites via Microsoft Graph on the target mailbox. Use an [Application Access Policy](https://learn.microsoft.com/en-us/graph/auth-limit-mailbox-access) to restrict the app's access to only this mailbox.
 
-When credentials are not set, calendar invite functionality is disabled.
+When any setting is missing, calendar invite functionality is disabled (no-op).
 
 ### Seed User
 

@@ -66,7 +66,8 @@ builder.Services.AddScoped<AuthenticationStateProvider, CustomAuthStateProvider>
 var graphSettings = builder.Configuration.GetSection("GraphApi").Get<GraphApiSettings>();
 if (!string.IsNullOrEmpty(graphSettings?.ClientId) &&
     !string.IsNullOrEmpty(graphSettings?.TenantId) &&
-    !string.IsNullOrEmpty(graphSettings?.ClientSecret))
+    !string.IsNullOrEmpty(graphSettings?.ClientSecret) &&
+    !string.IsNullOrEmpty(graphSettings?.TargetMailbox))
 {
     builder.Services.AddScoped<ICalendarInviteService, GraphCalendarService>();
 }

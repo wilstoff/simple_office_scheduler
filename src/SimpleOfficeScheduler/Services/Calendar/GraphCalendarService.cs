@@ -25,21 +25,9 @@ public class GraphCalendarService : ICalendarInviteService
         _graphClient = new GraphServiceClient(credential);
     }
 
-    /// <summary>
-    /// Returns the email of the mailbox to target for calendar operations.
-    /// When TargetMailbox is configured, all operations use that mailbox.
-    /// Otherwise, operations target the event owner's mailbox.
-    /// </summary>
-    internal string GetCalendarTargetEmail(AppUser owner)
-    {
-        return !string.IsNullOrEmpty(_settings.TargetMailbox)
-            ? _settings.TargetMailbox
-            : owner.Email;
-    }
-
     public async Task<string> CreateMeetingAsync(EventOccurrence occurrence, AppUser owner, AppUser signee)
     {
-        var targetEmail = GetCalendarTargetEmail(owner);
+        var targetEmail = _settings.TargetMailbox;
 
         var graphEvent = new GraphEvent
         {
@@ -85,7 +73,7 @@ public class GraphCalendarService : ICalendarInviteService
 
     public async Task AddAttendeeAsync(string graphEventId, AppUser owner, AppUser newSignee)
     {
-        var targetEmail = GetCalendarTargetEmail(owner);
+        var targetEmail = _settings.TargetMailbox;
 
         var existing = await _graphClient.Users[targetEmail].Events[graphEventId].GetAsync();
         if (existing is null) return;
@@ -108,7 +96,7 @@ public class GraphCalendarService : ICalendarInviteService
 
     public async Task CancelMeetingAsync(string graphEventId, AppUser owner)
     {
-        var targetEmail = GetCalendarTargetEmail(owner);
+        var targetEmail = _settings.TargetMailbox;
 
         await _graphClient.Users[targetEmail].Events[graphEventId].Cancel.PostAsync(
             new Microsoft.Graph.Users.Item.Events.Item.Cancel.CancelPostRequestBody

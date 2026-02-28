@@ -3,8 +3,6 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using SimpleOfficeScheduler.Data;
 using SimpleOfficeScheduler.Models;
 using SimpleOfficeScheduler.Services.Calendar;
@@ -48,34 +46,20 @@ public class GraphCalendarServiceTests : IDisposable
     }
 
     [Fact]
-    public void CalendarTargetEmail_Is_Owner_When_No_TargetMailbox()
+    public void DI_Registers_NoOp_When_TargetMailbox_Missing()
     {
-        var settings = Options.Create(new GraphApiSettings
+        var config = new Dictionary<string, string?>
         {
-            TenantId = "t",
-            ClientId = "c",
-            ClientSecret = "s"
-        });
-        var service = new GraphCalendarService(settings, NullLogger<GraphCalendarService>.Instance);
-        var owner = new AppUser { Email = "owner@test.com" };
+            ["GraphApi:TenantId"] = "t",
+            ["GraphApi:ClientId"] = "c",
+            ["GraphApi:ClientSecret"] = "s",
+            ["GraphApi:TargetMailbox"] = "",
+        };
+        var factory = CreateFactory(config);
+        using var scope = factory.Services.CreateScope();
+        var service = scope.ServiceProvider.GetRequiredService<ICalendarInviteService>();
 
-        Assert.Equal("owner@test.com", service.GetCalendarTargetEmail(owner));
-    }
-
-    [Fact]
-    public void CalendarTargetEmail_Is_TargetMailbox_When_Set()
-    {
-        var settings = Options.Create(new GraphApiSettings
-        {
-            TenantId = "t",
-            ClientId = "c",
-            ClientSecret = "s",
-            TargetMailbox = "simple_office_scheduler@test.com"
-        });
-        var service = new GraphCalendarService(settings, NullLogger<GraphCalendarService>.Instance);
-        var owner = new AppUser { Email = "owner@test.com" };
-
-        Assert.Equal("simple_office_scheduler@test.com", service.GetCalendarTargetEmail(owner));
+        Assert.IsType<NoOpCalendarService>(service);
     }
 
     [Fact]
