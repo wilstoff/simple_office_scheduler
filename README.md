@@ -107,6 +107,41 @@ docker run -d -p 8080:8080 \
   ghcr.io/wilstoff/simple_office_scheduler:latest
 ```
 
+## Backup
+
+The SQLite database and Data Protection keys are stored in the `scheduler-data` Docker volume. A backup script is provided that uses SQLite's online backup API to safely snapshot the database while the app is running.
+
+### Usage
+
+```bash
+./scripts/backup-db.sh /path/to/backup/directory
+```
+
+This creates a timestamped database file (e.g. `officeScheduler-2026-02-28_020000.db`) and a copy of the Data Protection keys in the target directory. Backups older than 30 days are automatically deleted.
+
+### Automated Daily Backups (cron)
+
+```
+0 2 * * * /path/to/scripts/backup-db.sh /mnt/nas/backups/office-scheduler >> /var/log/office-scheduler-backup.log 2>&1
+```
+
+### Restore
+
+To restore from a backup, stop the running container and copy the backup file into the volume:
+
+```bash
+docker stop <container-name>
+docker run --rm \
+  -v scheduler-data:/data \
+  -v /path/to/backups:/backup:ro \
+  alpine:latest sh -c "
+    cp /backup/officeScheduler-2026-02-28_020000.db /data/officeScheduler.db &&
+    cp -r /backup/keys-2026-02-28_020000/* /data/keys/
+  "
+```
+
+Then restart the container. The app runs migrations on startup so the schema will be up to date.
+
 ## Development Setup
 
 ### Prerequisites
