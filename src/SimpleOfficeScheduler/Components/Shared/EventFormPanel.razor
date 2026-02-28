@@ -276,6 +276,13 @@
             return;
         }
 
+        if (_model.EndTime <= _model.StartTime)
+        {
+            _errorMessage = "End time must be after start time.";
+            _isSubmitting = false;
+            return;
+        }
+
         var evt = new Event
         {
             Title = _model.Title,

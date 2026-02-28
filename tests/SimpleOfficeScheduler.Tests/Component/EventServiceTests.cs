@@ -174,6 +174,40 @@ public class EventServiceTests : IDisposable
         Assert.Equal(60, result.DurationMinutes);
     }
 
+    [Fact]
+    public async Task CreateEvent_EndTimeBeforeStartTime_ThrowsArgumentException()
+    {
+        var owner = await SeedOwnerAsync();
+        var evt = new Event
+        {
+            Title = "Bad Times",
+            StartTime = new LocalDateTime(2026, 3, 10, 10, 0),
+            EndTime = new LocalDateTime(2026, 3, 10, 9, 0),
+            Capacity = 5,
+            TimeZoneId = "America/Chicago"
+        };
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() => _sut.CreateEventAsync(evt, owner.Id));
+        Assert.Contains("end time", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task CreateEvent_EndTimeEqualsStartTime_ThrowsArgumentException()
+    {
+        var owner = await SeedOwnerAsync();
+        var evt = new Event
+        {
+            Title = "Zero Duration",
+            StartTime = new LocalDateTime(2026, 3, 10, 10, 0),
+            EndTime = new LocalDateTime(2026, 3, 10, 10, 0),
+            Capacity = 5,
+            TimeZoneId = "America/Chicago"
+        };
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() => _sut.CreateEventAsync(evt, owner.Id));
+        Assert.Contains("end time", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
     // ── GetEventAsync ───────────────────────────────────────────────
 
     [Fact]
@@ -570,6 +604,50 @@ public class EventServiceTests : IDisposable
 
         Assert.False(success);
         Assert.Contains("owner", error!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task UpdateEvent_EndTimeBeforeStartTime_ReturnsError()
+    {
+        var owner = await SeedOwnerAsync();
+        var evt = await _sut.CreateEventAsync(MakeSingleEvent(owner.Id), owner.Id);
+
+        var updated = new Event
+        {
+            Id = evt.Id,
+            Title = "Bad Times",
+            StartTime = new LocalDateTime(2026, 3, 10, 10, 0),
+            EndTime = new LocalDateTime(2026, 3, 10, 9, 0),
+            Capacity = 5,
+            TimeZoneId = "America/Chicago"
+        };
+
+        var (success, error) = await _sut.UpdateEventAsync(updated, owner.Id);
+
+        Assert.False(success);
+        Assert.Contains("end time", error!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task UpdateEvent_EndTimeEqualsStartTime_ReturnsError()
+    {
+        var owner = await SeedOwnerAsync();
+        var evt = await _sut.CreateEventAsync(MakeSingleEvent(owner.Id), owner.Id);
+
+        var updated = new Event
+        {
+            Id = evt.Id,
+            Title = "Zero Duration",
+            StartTime = new LocalDateTime(2026, 3, 10, 10, 0),
+            EndTime = new LocalDateTime(2026, 3, 10, 10, 0),
+            Capacity = 5,
+            TimeZoneId = "America/Chicago"
+        };
+
+        var (success, error) = await _sut.UpdateEventAsync(updated, owner.Id);
+
+        Assert.False(success);
+        Assert.Contains("end time", error!, StringComparison.OrdinalIgnoreCase);
     }
 
     // ── TransferOwnershipAsync ──────────────────────────────────────

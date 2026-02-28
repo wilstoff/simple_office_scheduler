@@ -281,4 +281,22 @@ public class AdjustScheduleTests : IntegrationTestBase
             Assert.Equal(9, pastOccurrence.StartTime.Hour); // original time, not 11
         }
     }
+
+    [Fact]
+    public async Task UpdateEvent_EndTimeBeforeStartTime_ReturnsBadRequest()
+    {
+        await LoginAsync();
+        var start = LocalDateTime.FromDateTime(DateTime.Now.Date.AddDays(2).AddHours(9));
+        var evt = await CreateEventAsync("Time Validation", startTime: start, endTime: start.PlusHours(1));
+
+        var response = await Client.PutAsJsonAsync($"/api/events/{evt.Id}", new UpdateEventRequest
+        {
+            Title = "Time Validation",
+            StartTime = start.PlusHours(2),
+            EndTime = start,
+            Capacity = evt.Capacity
+        }, JsonOptions);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
 }

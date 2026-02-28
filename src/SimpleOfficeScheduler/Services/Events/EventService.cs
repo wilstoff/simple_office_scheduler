@@ -43,6 +43,9 @@ public class EventService : IEventService
 
     public async Task<Event> CreateEventAsync(Event evt, int ownerUserId)
     {
+        if (evt.EndTime.CompareTo(evt.StartTime) <= 0)
+            throw new ArgumentException("End time must be after start time.");
+
         evt.OwnerUserId = ownerUserId;
         evt.DurationMinutes = (int)Period.Between(evt.StartTime, evt.EndTime).ToDuration().TotalMinutes;
         evt.CreatedAt = Now;
@@ -275,6 +278,9 @@ public class EventService : IEventService
 
         if (existing.OwnerUserId != userId)
             return (false, "Only the event owner can modify this event.");
+
+        if (updatedEvent.EndTime.CompareTo(updatedEvent.StartTime) <= 0)
+            return (false, "End time must be after start time.");
 
         // Update basic properties
         existing.Title = updatedEvent.Title;
