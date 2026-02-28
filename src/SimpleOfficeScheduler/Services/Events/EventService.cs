@@ -16,6 +16,7 @@ public class EventService : IEventService
     private readonly RecurrenceSettings _recurrenceSettings;
     private readonly IClock _clock;
     private readonly ILogger<EventService> _logger;
+    private readonly CalendarUpdateNotifier _notifier;
 
     public EventService(
         AppDbContext db,
@@ -23,7 +24,8 @@ public class EventService : IEventService
         ICalendarInviteService calendarService,
         IOptions<RecurrenceSettings> recurrenceSettings,
         IClock clock,
-        ILogger<EventService> logger)
+        ILogger<EventService> logger,
+        CalendarUpdateNotifier notifier)
     {
         _db = db;
         _expander = expander;
@@ -31,6 +33,7 @@ public class EventService : IEventService
         _recurrenceSettings = recurrenceSettings.Value;
         _clock = clock;
         _logger = logger;
+        _notifier = notifier;
     }
 
     private Instant Now => _clock.GetCurrentInstant();
@@ -73,6 +76,7 @@ public class EventService : IEventService
         }
 
         await _db.SaveChangesAsync();
+        _notifier.Notify();
         return evt;
     }
 
@@ -180,6 +184,7 @@ public class EventService : IEventService
             _logger.LogError(ex, "Failed to send calendar invite for occurrence {OccurrenceId}", occurrenceId);
         }
 
+        _notifier.Notify();
         return (true, null);
     }
 
@@ -210,6 +215,7 @@ public class EventService : IEventService
             }
         }
 
+        _notifier.Notify();
         return (true, null);
     }
 
@@ -242,6 +248,7 @@ public class EventService : IEventService
             }
         }
 
+        _notifier.Notify();
         return (true, null);
     }
 
@@ -263,6 +270,7 @@ public class EventService : IEventService
         occurrence.IsCancelled = false;
         await _db.SaveChangesAsync();
 
+        _notifier.Notify();
         return (true, null);
     }
 
@@ -329,6 +337,7 @@ public class EventService : IEventService
         }
 
         await _db.SaveChangesAsync();
+        _notifier.Notify();
         return (true, null);
     }
 
@@ -362,6 +371,7 @@ public class EventService : IEventService
         _db.Events.Remove(existing);
         await _db.SaveChangesAsync();
 
+        _notifier.Notify();
         return (true, null);
     }
 
@@ -382,6 +392,7 @@ public class EventService : IEventService
         evt.UpdatedAt = Now;
         await _db.SaveChangesAsync();
 
+        _notifier.Notify();
         return (true, null);
     }
 }

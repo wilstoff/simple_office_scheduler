@@ -7,6 +7,7 @@ using NodaTime;
 using NodaTime.Testing;
 using SimpleOfficeScheduler.Data;
 using SimpleOfficeScheduler.Models;
+using SimpleOfficeScheduler.Services;
 using SimpleOfficeScheduler.Services.Calendar;
 using SimpleOfficeScheduler.Services.Events;
 using SimpleOfficeScheduler.Services.Recurrence;
@@ -19,6 +20,7 @@ public class EventServiceTests : IDisposable
     private readonly AppDbContext _db;
     private readonly Mock<ICalendarInviteService> _calendarMock;
     private readonly FakeClock _clock;
+    private readonly CalendarUpdateNotifier _notifier;
     private readonly EventService _sut;
 
     public EventServiceTests()
@@ -40,6 +42,7 @@ public class EventServiceTests : IDisposable
             .ReturnsAsync(() => "graph-id-" + Guid.NewGuid());
 
         _clock = new FakeClock(Instant.FromUtc(2026, 3, 1, 12, 0));
+        _notifier = new CalendarUpdateNotifier();
 
         var recurrenceSettings = Options.Create(new RecurrenceSettings
         {
@@ -53,7 +56,8 @@ public class EventServiceTests : IDisposable
             _calendarMock.Object,
             recurrenceSettings,
             _clock,
-            NullLogger<EventService>.Instance);
+            NullLogger<EventService>.Instance,
+            _notifier);
     }
 
     public void Dispose()
@@ -731,5 +735,135 @@ public class EventServiceTests : IDisposable
 
         Assert.False(success);
         Assert.Contains("not found", error!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // ── CalendarUpdateNotifier integration ───────────────────────────
+
+    [Fact]
+    public async Task CreateEvent_NotifiesCalendarSubscribers()
+    {
+        var owner = await SeedOwnerAsync();
+        bool notified = false;
+        using var sub = _notifier.Subscribe(() => notified = true);
+
+        await _sut.CreateEventAsync(MakeSingleEvent(owner.Id), owner.Id);
+
+        Assert.True(notified);
+    }
+
+    [Fact]
+    public async Task SignUp_Success_NotifiesCalendarSubscribers()
+    {
+        var owner = await SeedOwnerAsync();
+        var user = await SeedUserAsync();
+        var evt = await _sut.CreateEventAsync(MakeSingleEvent(owner.Id), owner.Id);
+        var occId = (await _db.EventOccurrences.FirstAsync(o => o.EventId == evt.Id)).Id;
+
+        bool notified = false;
+        using var sub = _notifier.Subscribe(() => notified = true);
+
+        await _sut.SignUpAsync(occId, user.Id);
+
+        Assert.True(notified);
+    }
+
+    [Fact]
+    public async Task CancelSignUp_Success_NotifiesCalendarSubscribers()
+    {
+        var owner = await SeedOwnerAsync();
+        var user = await SeedUserAsync();
+        var evt = await _sut.CreateEventAsync(MakeSingleEvent(owner.Id), owner.Id);
+        var occId = (await _db.EventOccurrences.FirstAsync(o => o.EventId == evt.Id)).Id;
+        await _sut.SignUpAsync(occId, user.Id);
+
+        bool notified = false;
+        using var sub = _notifier.Subscribe(() => notified = true);
+
+        await _sut.CancelSignUpAsync(occId, user.Id);
+
+        Assert.True(notified);
+    }
+
+    [Fact]
+    public async Task CancelOccurrence_Success_NotifiesCalendarSubscribers()
+    {
+        var owner = await SeedOwnerAsync();
+        var evt = await _sut.CreateEventAsync(MakeSingleEvent(owner.Id), owner.Id);
+        var occId = (await _db.EventOccurrences.FirstAsync(o => o.EventId == evt.Id)).Id;
+
+        bool notified = false;
+        using var sub = _notifier.Subscribe(() => notified = true);
+
+        await _sut.CancelOccurrenceAsync(occId, owner.Id);
+
+        Assert.True(notified);
+    }
+
+    [Fact]
+    public async Task UncancelOccurrence_Success_NotifiesCalendarSubscribers()
+    {
+        var owner = await SeedOwnerAsync();
+        var evt = await _sut.CreateEventAsync(MakeSingleEvent(owner.Id), owner.Id);
+        var occId = (await _db.EventOccurrences.FirstAsync(o => o.EventId == evt.Id)).Id;
+        await _sut.CancelOccurrenceAsync(occId, owner.Id);
+
+        bool notified = false;
+        using var sub = _notifier.Subscribe(() => notified = true);
+
+        await _sut.UncancelOccurrenceAsync(occId, owner.Id);
+
+        Assert.True(notified);
+    }
+
+    [Fact]
+    public async Task UpdateEvent_Success_NotifiesCalendarSubscribers()
+    {
+        var owner = await SeedOwnerAsync();
+        var evt = await _sut.CreateEventAsync(MakeSingleEvent(owner.Id), owner.Id);
+
+        bool notified = false;
+        using var sub = _notifier.Subscribe(() => notified = true);
+
+        var updated = new Event
+        {
+            Id = evt.Id,
+            Title = "Updated",
+            StartTime = new LocalDateTime(2026, 3, 10, 10, 0),
+            EndTime = new LocalDateTime(2026, 3, 10, 11, 0),
+            Capacity = 5,
+            TimeZoneId = "America/Chicago"
+        };
+        await _sut.UpdateEventAsync(updated, owner.Id);
+
+        Assert.True(notified);
+    }
+
+    [Fact]
+    public async Task TransferOwnership_Success_NotifiesCalendarSubscribers()
+    {
+        var owner = await SeedOwnerAsync();
+        var newOwner = await SeedUserAsync("newowner");
+        var evt = await _sut.CreateEventAsync(MakeSingleEvent(owner.Id), owner.Id);
+
+        bool notified = false;
+        using var sub = _notifier.Subscribe(() => notified = true);
+
+        await _sut.TransferOwnershipAsync(evt.Id, owner.Id, newOwner.Id);
+
+        Assert.True(notified);
+    }
+
+    [Fact]
+    public async Task DeleteEvent_Success_NotifiesCalendarSubscribers()
+    {
+        var owner = await SeedOwnerAsync();
+        var evt = await _sut.CreateEventAsync(MakeSingleEvent(owner.Id), owner.Id);
+
+        bool notified = false;
+        using var sub = _notifier.Subscribe(() => notified = true);
+
+        await _sut.DeleteEventAsync(evt.Id, owner.Id);
+
+        Assert.True(notified);
     }
 }

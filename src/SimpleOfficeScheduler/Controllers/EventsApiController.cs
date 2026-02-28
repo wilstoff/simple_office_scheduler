@@ -13,12 +13,10 @@ namespace SimpleOfficeScheduler.Controllers;
 public class EventsApiController : ControllerBase
 {
     private readonly IEventService _eventService;
-    private readonly CalendarUpdateNotifier _notifier;
 
-    public EventsApiController(IEventService eventService, CalendarUpdateNotifier notifier)
+    public EventsApiController(IEventService eventService)
     {
         _eventService = eventService;
-        _notifier = notifier;
     }
 
     private int GetUserId() =>
@@ -103,7 +101,7 @@ public class EventsApiController : ControllerBase
         };
 
         var created = await _eventService.CreateEventAsync(evt, GetUserId());
-        _notifier.Notify();
+
         var full = await _eventService.GetEventAsync(created.Id);
         return CreatedAtAction(nameof(GetEvent), new { id = created.Id }, MapEventResponse(full!));
     }
@@ -134,7 +132,7 @@ public class EventsApiController : ControllerBase
         var (success, error) = await _eventService.UpdateEventAsync(evt, GetUserId());
         if (!success) return BadRequest(new { error });
 
-        _notifier.Notify();
+
         var updated = await _eventService.GetEventAsync(id);
         return Ok(MapEventResponse(updated!));
     }
@@ -145,7 +143,7 @@ public class EventsApiController : ControllerBase
     {
         var (success, error) = await _eventService.SignUpAsync(occurrenceId, GetUserId(), request?.Message);
         if (!success) return BadRequest(new { error });
-        _notifier.Notify();
+
         return Ok();
     }
 
@@ -155,7 +153,7 @@ public class EventsApiController : ControllerBase
     {
         var (success, error) = await _eventService.CancelSignUpAsync(occurrenceId, GetUserId());
         if (!success) return BadRequest(new { error });
-        _notifier.Notify();
+
         return Ok();
     }
 
@@ -165,7 +163,7 @@ public class EventsApiController : ControllerBase
     {
         var (success, error) = await _eventService.CancelOccurrenceAsync(occurrenceId, GetUserId());
         if (!success) return BadRequest(new { error });
-        _notifier.Notify();
+
         return Ok();
     }
 
@@ -175,7 +173,7 @@ public class EventsApiController : ControllerBase
     {
         var (success, error) = await _eventService.UncancelOccurrenceAsync(occurrenceId, GetUserId());
         if (!success) return BadRequest(new { error });
-        _notifier.Notify();
+
         return Ok();
     }
 
@@ -189,7 +187,7 @@ public class EventsApiController : ControllerBase
             if (error == "Event not found.") return NotFound(new { error });
             return BadRequest(new { error });
         }
-        _notifier.Notify();
+
         return Ok();
     }
 
@@ -199,7 +197,7 @@ public class EventsApiController : ControllerBase
     {
         var (success, error) = await _eventService.TransferOwnershipAsync(id, GetUserId(), newOwnerId);
         if (!success) return BadRequest(new { error });
-        _notifier.Notify();
+
         return Ok();
     }
 
