@@ -262,6 +262,7 @@ public class EventService : IEventService
     {
         var occurrence = await _db.EventOccurrences
             .Include(o => o.Event)
+                .ThenInclude(e => e.Owner)
             .FirstOrDefaultAsync(o => o.Id == occurrenceId);
 
         if (occurrence is null)
@@ -275,6 +276,34 @@ public class EventService : IEventService
 
         occurrence.IsCancelled = false;
         await _db.SaveChangesAsync();
+
+        // Recreate calendar invite if there are existing signups
+        var signups = await _db.EventSignups
+            .Include(s => s.User)
+            .Where(s => s.EventOccurrenceId == occurrenceId)
+            .ToListAsync();
+
+        if (signups.Any())
+        {
+            try
+            {
+                var firstSignup = signups[0];
+                var graphEventId = await _calendarService.CreateMeetingAsync(
+                    occurrence, occurrence.Event.Owner, firstSignup.User);
+                occurrence.GraphEventId = graphEventId;
+                await _db.SaveChangesAsync();
+
+                foreach (var signup in signups.Skip(1))
+                {
+                    await _calendarService.AddAttendeeAsync(graphEventId, occurrence.Event.Owner, signup.User);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to recreate calendar invite for occurrence {OccurrenceId} (Event: {EventTitle}, GraphEventId: {GraphEventId})",
+                    occurrenceId, occurrence.Event.Title, occurrence.GraphEventId);
+            }
+        }
 
         _notifier.Notify();
         return (true, null);

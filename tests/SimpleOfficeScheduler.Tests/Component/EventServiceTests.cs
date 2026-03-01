@@ -545,6 +545,29 @@ public class EventServiceTests : IDisposable
         Assert.Contains("not cancelled", error!, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task UncancelOccurrence_WithSignups_RecreatesCalendarMeeting()
+    {
+        var owner = await SeedOwnerAsync();
+        var user = await SeedUserAsync();
+        var evt = await _sut.CreateEventAsync(MakeSingleEvent(owner.Id), owner.Id);
+        var occId = (await _db.EventOccurrences.FirstAsync(o => o.EventId == evt.Id)).Id;
+
+        // Signup creates a meeting, then cancel occurrence clears GraphEventId
+        await _sut.SignUpAsync(occId, user.Id);
+        await _sut.CancelOccurrenceAsync(occId, owner.Id);
+
+        // Uncancel → should recreate meeting for existing signup
+        await _sut.UncancelOccurrenceAsync(occId, owner.Id);
+
+        var occ = await _db.EventOccurrences.FindAsync(occId);
+        Assert.NotNull(occ!.GraphEventId);  // New meeting created
+
+        _calendarMock.Verify(c => c.CreateMeetingAsync(
+            It.IsAny<EventOccurrence>(), It.IsAny<AppUser>(), It.IsAny<AppUser>()),
+            Times.Exactly(2));  // Once for signup, once for uncancel
+    }
+
     // ── UpdateEventAsync ────────────────────────────────────────────
 
     [Fact]
