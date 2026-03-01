@@ -482,6 +482,19 @@ h1:focus {
     overflow: hidden;
 }
 
+/* Overlapping events: minimum width with hover to front */
+.fc-timegrid-event-harness {
+    min-width: 80px;
+}
+
+.fc-timegrid-event-harness:hover {
+    z-index: 100 !important;
+}
+
+.fc-timegrid-event:hover {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
 /* ===== SIDE PANEL ===== */
 .side-panel-overlay {
     position: fixed;

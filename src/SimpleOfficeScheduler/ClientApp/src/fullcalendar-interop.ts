@@ -83,6 +83,7 @@ function createAndRenderCalendar(
             dotNetRef.invokeMethodAsync('OnDatesChanged', info.startStr, info.endStr);
         },
         scrollTime: '07:00:00',
+        slotEventOverlap: true,
         allDaySlot: false,
         nowIndicator: true,
         eventDisplay: 'block',
@@ -112,12 +113,24 @@ function createAndRenderCalendar(
                 timeHtml = `<div style="font-size:0.75em;opacity:0.85;">${s}${e ? ' - ' + e : ''}</div>`;
             }
 
+            const fmt12 = (d: Date): string => {
+                let h = d.getHours();
+                const m = d.getMinutes();
+                const ap = h >= 12 ? 'PM' : 'AM';
+                h = h % 12 || 12;
+                return m > 0 ? `${h}:${m.toString().padStart(2, '0')} ${ap}` : `${h} ${ap}`;
+            };
+            const timeRange = arg.event.start
+                ? `${fmt12(arg.event.start)}${arg.event.end ? ' - ' + fmt12(arg.event.end) : ''}`
+                : '';
+            const tooltip = `${arg.event.title}\n${timeRange}\n${detailText}`;
+
             return {
                 html: `
-                    <div style="padding: 2px 4px; overflow: hidden; height: 100%;">
-                        <div style="font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${arg.event.title}</div>
+                    <div title="${tooltip.replace(/"/g, '&quot;')}" style="padding: 2px 4px; overflow: hidden; height: 100%;">
+                        <div style="font-weight: 600; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3;">${arg.event.title}</div>
                         ${timeHtml}
-                        <div style="font-size: 0.75em; opacity: 0.85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${detailText}</div>
+                        <div style="font-size: 0.75em; opacity: 0.85; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3;">${detailText}</div>
                     </div>
                 `
             };
