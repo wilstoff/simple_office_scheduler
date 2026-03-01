@@ -19,6 +19,9 @@ node_modules/
 src/SimpleOfficeScheduler/wwwroot/js/fullcalendar-interop.js
 src/SimpleOfficeScheduler/wwwroot/js/fullcalendar-interop.js.map
 
+## Secrets
+keys/
+
 ## IDE
 .idea/
 .claude/

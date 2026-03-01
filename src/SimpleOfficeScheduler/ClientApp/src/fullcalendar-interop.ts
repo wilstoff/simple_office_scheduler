@@ -82,8 +82,7 @@ function createAndRenderCalendar(
         datesSet: (info: DatesSetArg) => {
             dotNetRef.invokeMethodAsync('OnDatesChanged', info.startStr, info.endStr);
         },
-        slotMinTime: '07:00:00',
-        slotMaxTime: '20:00:00',
+        scrollTime: '07:00:00',
         allDaySlot: false,
         nowIndicator: true,
         eventDisplay: 'block',
@@ -123,7 +122,7 @@ function createAndRenderCalendar(
                 `
             };
         },
-        height: 'auto'
+        height: '100%'
     });
 
     calendarInstance.render();

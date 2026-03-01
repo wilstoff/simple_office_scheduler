@@ -404,6 +404,10 @@ h1:focus {
     border-color: #929292;
 }
 
+#fullcalendar-container {
+    height: 100%;
+}
+
 /* ===== FULLCALENDAR THEME ===== */
 .fc {
     --fc-border-color: var(--fc-border);
@@ -423,6 +427,7 @@ h1:focus {
 
 .fc .fc-timegrid-slot {
     border-color: var(--fc-slot-line);
+    height: 3em;
 }
 
 .fc .fc-timegrid-col.fc-day-today {
