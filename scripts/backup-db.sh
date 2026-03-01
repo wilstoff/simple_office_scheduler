@@ -17,7 +17,7 @@ BACKUP_FILE="officeScheduler-${DATE}.db"
 
 # --- Backup database (safe online backup via sqlite3) ---
 docker run --rm \
-  -v "${VOLUME_NAME}":/data:ro \
+  -v "${VOLUME_NAME}":/data \
   -v "${BACKUP_DIR}":/backup \
   alpine:latest sh -c "
     apk add --no-cache sqlite > /dev/null 2>&1 &&
