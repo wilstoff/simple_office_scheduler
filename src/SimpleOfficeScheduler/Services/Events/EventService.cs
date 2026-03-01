@@ -181,7 +181,8 @@ public class EventService : IEventService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to send calendar invite for occurrence {OccurrenceId}", occurrenceId);
+            _logger.LogError(ex, "Failed to send calendar invite for occurrence {OccurrenceId} (Event: {EventTitle}, User: {UserId}, GraphEventId: {GraphEventId})",
+                occurrenceId, occurrence.Event.Title, userId, occurrence.GraphEventId);
         }
 
         _notifier.Notify();
@@ -211,7 +212,8 @@ public class EventService : IEventService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to remove attendee from calendar invite for occurrence {OccurrenceId}", occurrenceId);
+                _logger.LogError(ex, "Failed to remove attendee from calendar invite for occurrence {OccurrenceId} (User: {UserId}, GraphEventId: {GraphEventId})",
+                    occurrenceId, userId, occurrence.GraphEventId);
             }
         }
 
@@ -244,8 +246,12 @@ public class EventService : IEventService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to cancel calendar invite for occurrence {OccurrenceId}", occurrenceId);
+                _logger.LogError(ex, "Failed to cancel calendar invite for occurrence {OccurrenceId} (Event: {EventTitle}, GraphEventId: {GraphEventId})",
+                    occurrenceId, occurrence.Event.Title, occurrence.GraphEventId);
             }
+
+            occurrence.GraphEventId = null;
+            await _db.SaveChangesAsync();
         }
 
         _notifier.Notify();
@@ -364,7 +370,8 @@ public class EventService : IEventService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to cancel calendar invite for occurrence {OccurrenceId}", occ.Id);
+                _logger.LogError(ex, "Failed to cancel calendar invite for occurrence {OccurrenceId} (Event: {EventTitle}, GraphEventId: {GraphEventId})",
+                    occ.Id, existing.Title, occ.GraphEventId);
             }
         }
 

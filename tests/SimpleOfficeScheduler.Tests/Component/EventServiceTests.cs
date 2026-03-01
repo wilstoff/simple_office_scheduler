@@ -485,6 +485,34 @@ public class EventServiceTests : IDisposable
         _calendarMock.Verify(c => c.CancelMeetingAsync(It.IsAny<string>(), It.IsAny<AppUser>()), Times.Never);
     }
 
+    [Fact]
+    public async Task CancelThenUncancel_SignUp_CreatesNewMeeting()
+    {
+        var owner = await SeedOwnerAsync();
+        var user = await SeedUserAsync();
+        var evt = await _sut.CreateEventAsync(MakeSingleEvent(owner.Id), owner.Id);
+        var occId = (await _db.EventOccurrences.FirstAsync(o => o.EventId == evt.Id)).Id;
+
+        // First signup creates a meeting
+        await _sut.SignUpAsync(occId, user.Id);
+        var occ = await _db.EventOccurrences.FindAsync(occId);
+        Assert.NotNull(occ!.GraphEventId);
+
+        // Cancel occurrence → meeting cancelled, GraphEventId should be cleared
+        await _sut.CancelOccurrenceAsync(occId, owner.Id);
+        occ = await _db.EventOccurrences.FindAsync(occId);
+        Assert.Null(occ!.GraphEventId);
+
+        // Uncancel + re-signup → should create a fresh meeting
+        await _sut.UncancelOccurrenceAsync(occId, owner.Id);
+        await _sut.CancelSignUpAsync(occId, user.Id);
+        await _sut.SignUpAsync(occId, user.Id);
+
+        _calendarMock.Verify(c => c.CreateMeetingAsync(
+            It.IsAny<EventOccurrence>(), It.IsAny<AppUser>(), It.IsAny<AppUser>()),
+            Times.Exactly(2));
+    }
+
     // ── UncancelOccurrenceAsync ─────────────────────────────────────
 
     [Fact]
