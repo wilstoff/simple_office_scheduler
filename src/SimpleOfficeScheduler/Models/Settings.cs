@@ -8,7 +8,7 @@ public class ActiveDirectorySettings
     public bool UseSsl { get; set; }
     public string Domain { get; set; } = string.Empty;
     public string SearchBase { get; set; } = string.Empty;
-    public string? ServiceAccountDn { get; set; }
+    public string? ServiceAccountUsername { get; set; }
     public string? ServiceAccountPassword { get; set; }
 }
 

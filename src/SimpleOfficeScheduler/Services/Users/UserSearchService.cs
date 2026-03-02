@@ -54,7 +54,7 @@ public class UserSearchService : IUserSearchService
 
         // Search Active Directory if enabled and service account is configured
         if (_adSettings.Enabled
-            && !string.IsNullOrEmpty(_adSettings.ServiceAccountDn)
+            && !string.IsNullOrEmpty(_adSettings.ServiceAccountUsername)
             && !string.IsNullOrEmpty(_adSettings.ServiceAccountPassword))
         {
             var adResults = await SearchAdAsync(term, maxResults);
@@ -105,7 +105,7 @@ public class UserSearchService : IUserSearchService
 
         // Must have AD enabled to look up and create the user
         if (!_adSettings.Enabled
-            || string.IsNullOrEmpty(_adSettings.ServiceAccountDn)
+            || string.IsNullOrEmpty(_adSettings.ServiceAccountUsername)
             || string.IsNullOrEmpty(_adSettings.ServiceAccountPassword))
         {
             return null;
@@ -119,7 +119,8 @@ public class UserSearchService : IUserSearchService
                 connection.SecureSocketLayer = true;
 
             await connection.ConnectAsync(_adSettings.Host, _adSettings.Port);
-            await connection.BindAsync(_adSettings.ServiceAccountDn, _adSettings.ServiceAccountPassword);
+            var bindDn = $"{_adSettings.Domain}\\{_adSettings.ServiceAccountUsername}";
+            await connection.BindAsync(bindDn, _adSettings.ServiceAccountPassword);
 
             var filter = $"(sAMAccountName={EscapeLdapFilter(username)})";
             var searchResults = await connection.SearchAsync(
@@ -179,7 +180,8 @@ public class UserSearchService : IUserSearchService
                 connection.SecureSocketLayer = true;
 
             await connection.ConnectAsync(_adSettings.Host, _adSettings.Port);
-            await connection.BindAsync(_adSettings.ServiceAccountDn, _adSettings.ServiceAccountPassword);
+            var bindDn = $"{_adSettings.Domain}\\{_adSettings.ServiceAccountUsername}";
+            await connection.BindAsync(bindDn, _adSettings.ServiceAccountPassword);
 
             var escapedTerm = EscapeLdapFilter(term);
             var filter = $"(&(objectClass=user)(|(displayName=*{escapedTerm}*)(sAMAccountName=*{escapedTerm}*)(mail=*{escapedTerm}*)))";

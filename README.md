@@ -45,7 +45,7 @@ All settings can be overridden with environment variables using the `__` (double
 | `ActiveDirectory__UseSsl` | `false` | Use SSL for LDAP connection |
 | `ActiveDirectory__Domain` | `COMPANY` | AD domain name |
 | `ActiveDirectory__SearchBase` | `DC=company,DC=com` | LDAP search base DN |
-| `ActiveDirectory__ServiceAccountDn` | *(empty)* | Service account DN for user search (e.g. `CN=svc_scheduler,OU=Service Accounts,DC=company,DC=com`) |
+| `ActiveDirectory__ServiceAccountUsername` | *(empty)* | Service account username for user search (e.g. `svc_scheduler`) |
 | `ActiveDirectory__ServiceAccountPassword` | *(empty)* | Service account password for user search |
 
 ### Teams Calendar Integration (optional)
@@ -87,7 +87,7 @@ docker run -d -p 8080:8080 \
   -e ActiveDirectory__Host=ldap.mycompany.com \
   -e ActiveDirectory__Domain=MYCOMPANY \
   -e ActiveDirectory__SearchBase="DC=mycompany,DC=com" \
-  -e ActiveDirectory__ServiceAccountDn="CN=svc_scheduler,OU=Service Accounts,DC=mycompany,DC=com" \
+  -e ActiveDirectory__ServiceAccountUsername="svc_scheduler" \
   -e ActiveDirectory__ServiceAccountPassword="s3cret" \
   -e GraphApi__TenantId="your-tenant-id" \
   -e GraphApi__ClientId="your-client-id" \
