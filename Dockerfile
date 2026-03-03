@@ -21,7 +21,7 @@ COPY . .
 
 # Install npm dependencies and build TypeScript
 WORKDIR /src/src/SimpleOfficeScheduler/ClientApp
-RUN npm ci
+RUN npm ci && npm run build
 
 # Build and publish the .NET app
 WORKDIR /src
