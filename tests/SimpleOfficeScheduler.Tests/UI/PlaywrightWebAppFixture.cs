@@ -14,6 +14,7 @@ using SimpleOfficeScheduler.Services.Auth;
 using SimpleOfficeScheduler.Services.Calendar;
 using SimpleOfficeScheduler.Services.Events;
 using SimpleOfficeScheduler.Services;
+using SimpleOfficeScheduler.Services.Ldap;
 using SimpleOfficeScheduler.Services.Recurrence;
 using SimpleOfficeScheduler.Services.Users;
 
@@ -79,6 +80,9 @@ public class PlaywrightWebAppFixture : IAsyncLifetime
 
         // Real-time notifications
         builder.Services.AddSingleton<CalendarUpdateNotifier>();
+
+        // LDAP
+        builder.Services.AddSingleton<ILdapConnectionFactory, LdapConnectionFactory>();
 
         // Application services
         builder.Services.AddScoped<ICalendarInviteService, NoOpCalendarService>();

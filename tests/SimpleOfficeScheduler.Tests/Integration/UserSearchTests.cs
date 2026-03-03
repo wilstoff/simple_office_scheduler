@@ -85,6 +85,17 @@ public class UserSearchTests : IntegrationTestBase
     }
 
     [Fact]
+    public async Task EnsureUser_AdDisabled_ReturnsNotFound()
+    {
+        await LoginAsync();
+
+        // No AD configured, so ensure for unknown user returns NotFound
+        var response = await Client.PostAsJsonAsync("/api/users/ensure",
+            new { username = "unknownuser" });
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
     public async Task TransferOwnership_ViaSearch_WorksEndToEnd()
     {
         await LoginAsync();

@@ -11,6 +11,7 @@ using SimpleOfficeScheduler.Services.Calendar;
 using SimpleOfficeScheduler.Services.Events;
 using SimpleOfficeScheduler.Services;
 using Microsoft.AspNetCore.DataProtection;
+using SimpleOfficeScheduler.Services.Ldap;
 using SimpleOfficeScheduler.Services.Recurrence;
 using SimpleOfficeScheduler.Services.Users;
 
@@ -78,6 +79,9 @@ else
 
 // Real-time calendar update notifications
 builder.Services.AddSingleton<CalendarUpdateNotifier>();
+
+// LDAP
+builder.Services.AddSingleton<ILdapConnectionFactory, LdapConnectionFactory>();
 
 // Application services
 builder.Services.AddScoped<RecurrenceExpander>();

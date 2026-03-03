@@ -3,6 +3,7 @@ using Microsoft.Extensions.Options;
 using Novell.Directory.Ldap;
 using SimpleOfficeScheduler.Data;
 using SimpleOfficeScheduler.Models;
+using SimpleOfficeScheduler.Services.Ldap;
 
 namespace SimpleOfficeScheduler.Services.Users;
 
@@ -10,15 +11,18 @@ public class UserSearchService : IUserSearchService
 {
     private readonly AppDbContext _db;
     private readonly ActiveDirectorySettings _adSettings;
+    private readonly ILdapConnectionFactory _ldapFactory;
     private readonly ILogger<UserSearchService> _logger;
 
     public UserSearchService(
         AppDbContext db,
         IOptions<ActiveDirectorySettings> adSettings,
+        ILdapConnectionFactory ldapFactory,
         ILogger<UserSearchService> logger)
     {
         _db = db;
         _adSettings = adSettings.Value;
+        _ldapFactory = ldapFactory;
         _logger = logger;
     }
 
@@ -114,7 +118,7 @@ public class UserSearchService : IUserSearchService
         // Look up in AD and create local record
         try
         {
-            using var connection = new LdapConnection();
+            using var connection = _ldapFactory.Create();
             if (_adSettings.UseSsl)
                 connection.SecureSocketLayer = true;
 
@@ -123,7 +127,7 @@ public class UserSearchService : IUserSearchService
             await connection.BindAsync(bindDn, _adSettings.ServiceAccountPassword);
 
             var filter = $"(sAMAccountName={EscapeLdapFilter(username)})";
-            var searchResults = await connection.SearchAsync(
+            var searchResults = connection.SearchAsync(
                 _adSettings.SearchBase,
                 LdapConnection.ScopeSub,
                 filter,
@@ -175,7 +179,7 @@ public class UserSearchService : IUserSearchService
 
         try
         {
-            using var connection = new LdapConnection();
+            using var connection = _ldapFactory.Create();
             if (_adSettings.UseSsl)
                 connection.SecureSocketLayer = true;
 
@@ -186,7 +190,7 @@ public class UserSearchService : IUserSearchService
             var escapedTerm = EscapeLdapFilter(term);
             var filter = $"(&(objectClass=user)(|(displayName=*{escapedTerm}*)(sAMAccountName=*{escapedTerm}*)(mail=*{escapedTerm}*)))";
 
-            var searchResults = await connection.SearchAsync(
+            var searchResults = connection.SearchAsync(
                 _adSettings.SearchBase,
                 LdapConnection.ScopeSub,
                 filter,
