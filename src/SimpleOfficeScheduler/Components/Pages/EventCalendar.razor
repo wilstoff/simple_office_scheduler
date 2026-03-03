@@ -4,6 +4,7 @@
 @inject IJSRuntime JS
 @inject NavigationManager Navigation
 @inject SimpleOfficeScheduler.Services.CalendarUpdateNotifier Notifier
+@using System.Reflection
 @implements IAsyncDisposable
 @rendermode InteractiveServer
 
@@ -25,6 +26,11 @@
                   OnEditRequested="HandleEditRequested" />
 
 @code {
+    private static readonly string _assetVersion =
+        typeof(EventCalendar).Assembly
+            .GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion ?? "0";
+
     private readonly string _ownerId = Guid.NewGuid().ToString("N");
     private IJSObjectReference? _module;
     private DotNetObjectReference<EventCalendar>? _dotNetRef;
@@ -51,7 +57,7 @@
         if (firstRender)
         {
             _module = await JS.InvokeAsync<IJSObjectReference>(
-                "import", "/js/fullcalendar-interop.js");
+                "import", $"/js/fullcalendar-interop.js?v={_assetVersion}");
             _dotNetRef = DotNetObjectReference.Create(this);
             await _module.InvokeVoidAsync("initCalendar", _dotNetRef, new
             {
