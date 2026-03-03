@@ -200,19 +200,33 @@ public class EventService : IEventService
         _db.EventSignups.Remove(signup);
         await _db.SaveChangesAsync();
 
-        // Remove from calendar invite
-        var occurrence = await _db.EventOccurrences.FindAsync(occurrenceId);
+        // Update calendar invite
+        var occurrence = await _db.EventOccurrences
+            .Include(o => o.Event)
+                .ThenInclude(e => e.Owner)
+            .Include(o => o.Signups)
+            .FirstOrDefaultAsync(o => o.Id == occurrenceId);
         if (!string.IsNullOrEmpty(occurrence?.GraphEventId))
         {
             try
             {
-                var user = await _db.Users.FindAsync(userId);
-                if (user is not null)
-                    await _calendarService.RemoveAttendeeAsync(occurrence.GraphEventId, user);
+                if (!occurrence.Signups.Any())
+                {
+                    // Last signup removed — cancel the entire meeting
+                    await _calendarService.CancelMeetingAsync(occurrence.GraphEventId, occurrence.Event.Owner);
+                    occurrence.GraphEventId = null;
+                    await _db.SaveChangesAsync();
+                }
+                else
+                {
+                    var user = await _db.Users.FindAsync(userId);
+                    if (user is not null)
+                        await _calendarService.RemoveAttendeeAsync(occurrence.GraphEventId, user);
+                }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to remove attendee from calendar invite for occurrence {OccurrenceId} (User: {UserId}, GraphEventId: {GraphEventId})",
+                _logger.LogError(ex, "Failed to update calendar invite for occurrence {OccurrenceId} (User: {UserId}, GraphEventId: {GraphEventId})",
                     occurrenceId, userId, occurrence.GraphEventId);
             }
         }
