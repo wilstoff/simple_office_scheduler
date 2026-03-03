@@ -106,4 +106,37 @@ public class ViewEventsTests : IntegrationTestBase
         var json = await response.Content.ReadAsStringAsync();
         Assert.DoesNotContain("Far Future Event", json);
     }
+
+    [Fact]
+    public async Task SearchEvents_ReturnsBothPastAndUpcomingEvents()
+    {
+        await LoginAsync();
+
+        // Create an event with a future occurrence
+        var futureStart = LocalDateTime.FromDateTime(DateTime.Now.Date.AddDays(3).AddHours(10));
+        await CreateEventAsync("Future Standup", startTime: futureStart, endTime: futureStart.PlusHours(1));
+
+        // Create an event with a past occurrence
+        var pastStart = LocalDateTime.FromDateTime(DateTime.Now.Date.AddDays(-7).AddHours(10));
+        await CreateEventAsync("Past Retro", startTime: pastStart, endTime: pastStart.PlusHours(1));
+
+        // Search returns both events regardless of occurrence timing
+        var results = await Client.GetFromJsonAsync<List<EventResponse>>("/api/events/search", JsonOptions);
+
+        Assert.NotNull(results);
+        Assert.Contains(results, e => e.Title == "Future Standup");
+        Assert.Contains(results, e => e.Title == "Past Retro");
+
+        // Each event has occurrences loaded
+        var futureEvent = results.First(e => e.Title == "Future Standup");
+        var pastEvent = results.First(e => e.Title == "Past Retro");
+        Assert.NotEmpty(futureEvent.Occurrences);
+        Assert.NotEmpty(pastEvent.Occurrences);
+
+        // Verify occurrence times are correct for UI classification
+        Assert.True(futureEvent.Occurrences.Any(o => o.StartTime.CompareTo(LocalDateTime.FromDateTime(DateTime.Now)) > 0),
+            "Future event should have occurrence after now");
+        Assert.True(pastEvent.Occurrences.All(o => o.StartTime.CompareTo(LocalDateTime.FromDateTime(DateTime.Now)) < 0),
+            "Past event should have all occurrences before now");
+    }
 }

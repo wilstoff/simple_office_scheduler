@@ -40,64 +40,151 @@ else if (!_events.Any())
 }
 else
 {
-    <div class="table-responsive">
-        <table class="table table-hover">
-            <thead>
-                <tr>
-                    <th>Title</th>
-                    <th>Owner</th>
-                    <th>Next Occurrence</th>
-                    <th>Capacity</th>
-                    <th>Recurring</th>
-                    <th></th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var evt in _events)
-                {
-                    var zone = TimeZoneHelper.GetZone(evt.TimeZoneId);
-                    var nowInTz = Clock.GetCurrentInstant().InZone(zone).LocalDateTime;
-                    var nextOccurrence = evt.Occurrences?
-                        .Where(o => !o.IsCancelled && o.StartTime.CompareTo(nowInTz) > 0)
-                        .OrderBy(o => o.StartTime)
-                        .FirstOrDefault();
+    <ul class="nav nav-tabs mb-3" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link @(_activeTab == "upcoming" ? "active" : "")"
+                    type="button" role="tab" @onclick='() => _activeTab = "upcoming"'>
+                Upcoming <span class="badge bg-primary">@_upcomingEvents.Count</span>
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link @(_activeTab == "past" ? "active" : "")"
+                    type="button" role="tab" @onclick='() => _activeTab = "past"'>
+                Past <span class="badge bg-secondary">@_pastEvents.Count</span>
+            </button>
+        </li>
+    </ul>
+    <div class="tab-content">
+        <div class="tab-pane @(_activeTab == "upcoming" ? "show active" : "")" id="upcoming" role="tabpanel">
+            @if (_upcomingEvents.Any())
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Title</th>
+                                <th>Owner</th>
+                                <th>Next Occurrence</th>
+                                <th>Capacity</th>
+                                <th>Recurring</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var evt in _upcomingEvents)
+                            {
+                                var zone = TimeZoneHelper.GetZone(evt.TimeZoneId);
+                                var nowInTz = Clock.GetCurrentInstant().InZone(zone).LocalDateTime;
+                                var nextOccurrence = evt.Occurrences?
+                                    .Where(o => !o.IsCancelled && o.StartTime.CompareTo(nowInTz) > 0)
+                                    .OrderBy(o => o.StartTime)
+                                    .FirstOrDefault();
 
-                    <tr>
-                        <td>@evt.Title</td>
-                        <td>@evt.Owner.DisplayName</td>
-                        <td>
-                            @if (nextOccurrence is not null)
-                            {
-                                @nextOccurrence.StartTime.ToDateTimeUnspecified().ToString("MMM dd, yyyy h:mm tt")
+                                <tr>
+                                    <td>@evt.Title</td>
+                                    <td>@evt.Owner.DisplayName</td>
+                                    <td>
+                                        @if (nextOccurrence is not null)
+                                        {
+                                            @nextOccurrence.StartTime.ToDateTimeUnspecified().ToString("MMM dd, yyyy h:mm tt")
+                                        }
+                                    </td>
+                                    <td>@evt.Capacity</td>
+                                    <td>
+                                        @if (evt.Recurrence is not null)
+                                        {
+                                            <span class="badge bg-info">@evt.Recurrence.Type</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-secondary">One-time</span>
+                                        }
+                                    </td>
+                                    <td>
+                                        <a href="events/@evt.Id" class="btn btn-sm btn-outline-primary">View</a>
+                                    </td>
+                                </tr>
                             }
-                            else
+                        </tbody>
+                    </table>
+                </div>
+            }
+            else
+            {
+                <p class="text-muted text-center py-3">No upcoming events.</p>
+            }
+        </div>
+        <div class="tab-pane @(_activeTab == "past" ? "show active" : "")" id="past" role="tabpanel">
+            @if (_pastEvents.Any())
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Title</th>
+                                <th>Owner</th>
+                                <th>Last Occurrence</th>
+                                <th>Capacity</th>
+                                <th>Recurring</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var evt in _pastEvents)
                             {
-                                <span class="text-muted">No upcoming</span>
+                                var zone = TimeZoneHelper.GetZone(evt.TimeZoneId);
+                                var nowInTz = Clock.GetCurrentInstant().InZone(zone).LocalDateTime;
+                                var lastOccurrence = evt.Occurrences?
+                                    .Where(o => !o.IsCancelled && o.StartTime.CompareTo(nowInTz) <= 0)
+                                    .OrderByDescending(o => o.StartTime)
+                                    .FirstOrDefault();
+
+                                <tr>
+                                    <td>@evt.Title</td>
+                                    <td>@evt.Owner.DisplayName</td>
+                                    <td>
+                                        @if (lastOccurrence is not null)
+                                        {
+                                            @lastOccurrence.StartTime.ToDateTimeUnspecified().ToString("MMM dd, yyyy h:mm tt")
+                                        }
+                                        else
+                                        {
+                                            <span class="text-muted">No occurrences</span>
+                                        }
+                                    </td>
+                                    <td>@evt.Capacity</td>
+                                    <td>
+                                        @if (evt.Recurrence is not null)
+                                        {
+                                            <span class="badge bg-info">@evt.Recurrence.Type</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-secondary">One-time</span>
+                                        }
+                                    </td>
+                                    <td>
+                                        <a href="events/@evt.Id" class="btn btn-sm btn-outline-primary">View</a>
+                                    </td>
+                                </tr>
                             }
-                        </td>
-                        <td>@evt.Capacity</td>
-                        <td>
-                            @if (evt.Recurrence is not null)
-                            {
-                                <span class="badge bg-info">@evt.Recurrence.Type</span>
-                            }
-                            else
-                            {
-                                <span class="badge bg-secondary">One-time</span>
-                            }
-                        </td>
-                        <td>
-                            <a href="events/@evt.Id" class="btn btn-sm btn-outline-primary">View</a>
-                        </td>
-                    </tr>
-                }
-            </tbody>
-        </table>
+                        </tbody>
+                    </table>
+                </div>
+            }
+            else
+            {
+                <p class="text-muted text-center py-3">No past events.</p>
+            }
+        </div>
     </div>
 }
 
 @code {
     private List<Event>? _events;
+    private List<Event> _upcomingEvents = new();
+    private List<Event> _pastEvents = new();
+    private string _activeTab = "upcoming";
     private string? _searchTerm;
     private CancellationTokenSource? _debounceTimer;
 
@@ -108,7 +195,6 @@ else
 
     private async Task OnSearchInput()
     {
-        // Cancel any pending debounce
         _debounceTimer?.Cancel();
         _debounceTimer = new CancellationTokenSource();
         var token = _debounceTimer.Token;
@@ -125,5 +211,38 @@ else
     private async Task Search()
     {
         _events = await EventService.SearchEventsAsync(_searchTerm);
+        ClassifyEvents();
+    }
+
+    private void ClassifyEvents()
+    {
+        if (_events is null || !_events.Any())
+        {
+            _upcomingEvents = new();
+            _pastEvents = new();
+            return;
+        }
+
+        var upcoming = new List<Event>();
+        var past = new List<Event>();
+
+        foreach (var evt in _events)
+        {
+            var zone = TimeZoneHelper.GetZone(evt.TimeZoneId);
+            var nowInTz = Clock.GetCurrentInstant().InZone(zone).LocalDateTime;
+            var nonCancelled = evt.Occurrences?.Where(o => !o.IsCancelled).ToList()
+                               ?? new List<EventOccurrence>();
+
+            bool hasFuture = nonCancelled.Any(o => o.StartTime.CompareTo(nowInTz) > 0);
+            bool hasPast = nonCancelled.Any(o => o.StartTime.CompareTo(nowInTz) <= 0);
+
+            if (hasFuture)
+                upcoming.Add(evt);
+            if (hasPast || !hasFuture)
+                past.Add(evt);
+        }
+
+        _upcomingEvents = upcoming;
+        _pastEvents = past;
     }
 }

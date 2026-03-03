@@ -986,4 +986,63 @@ public class UITests : IClassFixture<PlaywrightWebAppFixture>, IAsyncLifetime
         ");
         Assert.True(moduleLoaded, "fullcalendar-interop.js should be loadable as an ES module with initCalendar export");
     }
+
+    // ===== Events Page: Upcoming / Past Tabs =====
+
+    [Fact]
+    public async Task EventsPage_ShowsUpcomingAndPastTabs()
+    {
+        // Create a future event and a past event via API
+        var futureStart = DateTime.Now.Date.AddDays(3).AddHours(10);
+        var pastStart = DateTime.Now.Date.AddDays(-7).AddHours(10);
+
+        await CreateEventViaApi(_page, "Future Standup", futureStart, futureStart.AddHours(1));
+        await CreateEventViaApi(_page, "Past Retro", pastStart, pastStart.AddHours(1));
+
+        // Navigate to Events page
+        await ClickNavLink("Events");
+        await _page.WaitForSelectorAsync(".nav-tabs", new() { Timeout = 10000 });
+
+        // Upcoming tab should be active by default
+        var tabs = _page.Locator(".nav-tabs");
+        var activeTab = tabs.Locator(".nav-link.active");
+        var activeTabText = await activeTab.TextContentAsync();
+        Assert.Contains("Upcoming", activeTabText);
+
+        // Upcoming tab should contain the future event
+        var upcomingPane = _page.Locator("#upcoming");
+        await Assertions.Expect(upcomingPane.Locator("td", new() { HasText = "Future Standup" })).ToBeVisibleAsync();
+
+        // Past event should NOT be in the upcoming pane
+        var pastInUpcoming = await upcomingPane.Locator("td", new() { HasText = "Past Retro" }).CountAsync();
+        Assert.Equal(0, pastInUpcoming);
+
+        // Click the Past tab
+        await tabs.Locator(".nav-link", new() { HasText = "Past" }).ClickAsync();
+        await _page.WaitForTimeoutAsync(300); // Allow tab transition
+
+        // Past tab should contain the past event
+        var pastPane = _page.Locator("#past");
+        await Assertions.Expect(pastPane.Locator("td", new() { HasText = "Past Retro" })).ToBeVisibleAsync();
+
+        // Past tab should show "Last Occurrence" column header
+        var lastOccHeader = await pastPane.Locator("th", new() { HasText = "Last Occurrence" }).CountAsync();
+        Assert.True(lastOccHeader > 0, "Past tab should have 'Last Occurrence' column header");
+
+        // Search should filter both tabs
+        await _page.Locator("input[placeholder='Search events...']").FillAsync("Future");
+        await _page.WaitForTimeoutAsync(500); // Debounce
+
+        // Switch to Upcoming tab to check
+        await tabs.Locator(".nav-link", new() { HasText = "Upcoming" }).ClickAsync();
+        await _page.WaitForTimeoutAsync(300);
+        var upcomingAfterSearch = await _page.Locator("#upcoming td", new() { HasText = "Future Standup" }).CountAsync();
+        Assert.True(upcomingAfterSearch > 0, "Future event should appear in Upcoming after searching 'Future'");
+
+        // Switch to Past tab — should be empty after searching "Future"
+        await tabs.Locator(".nav-link", new() { HasText = "Past" }).ClickAsync();
+        await _page.WaitForTimeoutAsync(300);
+        var pastAfterSearch = await _page.Locator("#past td", new() { HasText = "Past Retro" }).CountAsync();
+        Assert.Equal(0, pastAfterSearch);
+    }
 }
