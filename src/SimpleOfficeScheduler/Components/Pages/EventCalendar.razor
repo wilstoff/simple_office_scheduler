@@ -4,7 +4,6 @@
 @inject IJSRuntime JS
 @inject NavigationManager Navigation
 @inject SimpleOfficeScheduler.Services.CalendarUpdateNotifier Notifier
-@using System.Reflection
 @implements IAsyncDisposable
 @rendermode InteractiveServer
 
@@ -27,9 +26,8 @@
 
 @code {
     private static readonly string _assetVersion =
-        typeof(EventCalendar).Assembly
-            .GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>()
-            ?.InformationalVersion ?? "0";
+        File.GetLastWriteTimeUtc(typeof(EventCalendar).Assembly.Location)
+            .Ticks.ToString();
 
     private readonly string _ownerId = Guid.NewGuid().ToString("N");
     private IJSObjectReference? _module;

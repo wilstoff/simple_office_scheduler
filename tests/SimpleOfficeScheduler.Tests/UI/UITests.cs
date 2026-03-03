@@ -516,7 +516,8 @@ public class UITests : IClassFixture<PlaywrightWebAppFixture>, IAsyncLifetime
         // the calendar is reinitialized from stored parameters.
         for (var round = 1; round <= 3; round++)
         {
-            // ES modules are singletons — re-importing returns the same instance
+            // ES modules are URL-keyed singletons — re-importing with the exact
+            // same URL (including ?v= cache-buster) returns the same instance
             // with all module-level state (lastDotNetRef, lastOptions) intact.
             var recovered = await _page.EvaluateAsync<bool>(@"
                 (async () => {
@@ -524,7 +525,11 @@ public class UITests : IClassFixture<PlaywrightWebAppFixture>, IAsyncLifetime
                     if (!container) return false;
                     container.innerHTML = '';
 
-                    const mod = await import('/js/fullcalendar-interop.js');
+                    // Find the versioned module URL from performance entries so we
+                    // get the same module instance the app loaded (with ?v= param).
+                    const entries = performance.getEntriesByType('resource');
+                    const fcEntry = entries.find(e => e.name.includes('fullcalendar-interop'));
+                    const mod = await import(fcEntry ? fcEntry.name : '/js/fullcalendar-interop.js');
                     return mod.checkAndRecover();
                 })()
             ");
