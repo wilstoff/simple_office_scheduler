@@ -83,7 +83,7 @@ function createAndRenderCalendar(
             dotNetRef.invokeMethodAsync('OnDatesChanged', info.startStr, info.endStr);
         },
         scrollTime: '07:00:00',
-        slotEventOverlap: true,
+        slotEventOverlap: false,
         allDaySlot: false,
         nowIndicator: true,
         eventDisplay: 'block',
@@ -127,10 +127,10 @@ function createAndRenderCalendar(
 
             return {
                 html: `
-                    <div title="${tooltip.replace(/"/g, '&quot;')}" style="padding: 2px 4px; overflow: hidden; height: 100%;">
-                        <div style="font-weight: 600; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3;">${arg.event.title}</div>
+                    <div title="${tooltip.replace(/"/g, '&quot;')}" style="padding: 2px 4px; overflow: hidden; height: 100%; white-space: normal; width: 100%;">
+                        <div style="font-weight: 600; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; word-break: break-word; width: 100%;">${arg.event.title}</div>
                         ${timeHtml}
-                        <div style="font-size: 0.75em; opacity: 0.85; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3;">${detailText}</div>
+                        <div style="font-size: 0.75em; opacity: 0.85; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; width: 100%;">${detailText}</div>
                     </div>
                 `
             };

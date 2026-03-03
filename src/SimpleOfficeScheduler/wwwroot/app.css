@@ -480,6 +480,7 @@ h1:focus {
 
 .fc-timegrid-event .fc-event-main {
     overflow: hidden;
+    white-space: normal;
 }
 
 /* Overlapping events: minimum width with hover to front */
