@@ -69,7 +69,7 @@ public class CancelInstanceTests : IntegrationTestBase
 
         await Client.PostAsync($"/api/events/occurrences/{occurrenceId}/cancel", null);
 
-        var signupResponse = await Client.PostAsync($"/api/events/{evt.Id}/signup/{occurrenceId}", null);
+        var signupResponse = await SignUpForOccurrenceAsync(evt.Id, occurrenceId);
         Assert.Equal(HttpStatusCode.BadRequest, signupResponse.StatusCode);
     }
 

@@ -11,21 +11,21 @@ public class NoOpCalendarService : ICalendarInviteService
         _logger = logger;
     }
 
-    public Task<string> CreateMeetingAsync(EventOccurrence occurrence, AppUser owner, AppUser signee)
+    public Task<string> CreateMeetingAsync(EventOccurrence occurrence, AppUser owner, AppUser signee, IReadOnlyList<EventSignup> allSignups)
     {
         _logger.LogInformation("DEV: Would create Teams meeting for '{Title}' with {Owner} and {Signee}",
             occurrence.Event.Title, owner.Email, signee.Email);
         return Task.FromResult("fake-graph-id-" + Guid.NewGuid());
     }
 
-    public Task AddAttendeeAsync(string graphEventId, AppUser owner, AppUser newSignee)
+    public Task AddAttendeeAsync(string graphEventId, AppUser owner, AppUser newSignee, IReadOnlyList<EventSignup> allSignups)
     {
         _logger.LogInformation("DEV: Would add attendee {Email} to meeting {GraphEventId}",
             newSignee.Email, graphEventId);
         return Task.CompletedTask;
     }
 
-    public Task RemoveAttendeeAsync(string graphEventId, AppUser attendeeToRemove)
+    public Task RemoveAttendeeAsync(string graphEventId, AppUser attendeeToRemove, IReadOnlyList<EventSignup> remainingSignups)
     {
         _logger.LogInformation("DEV: Would remove attendee {Email} from meeting {GraphEventId}",
             attendeeToRemove.Email, graphEventId);

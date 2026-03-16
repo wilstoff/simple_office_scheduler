@@ -139,9 +139,9 @@ public class EventsApiController : ControllerBase
 
     [HttpPost("{eventId:int}/signup/{occurrenceId:int}")]
     [Authorize]
-    public async Task<IActionResult> SignUp(int eventId, int occurrenceId, [FromBody] SignUpRequest? request = null)
+    public async Task<IActionResult> SignUp(int eventId, int occurrenceId, [FromBody] SignUpRequest request)
     {
-        var (success, error) = await _eventService.SignUpAsync(occurrenceId, GetUserId(), request?.Message);
+        var (success, error) = await _eventService.SignUpAsync(occurrenceId, GetUserId(), request.Message);
         if (!success) return BadRequest(new { error });
 
         return Ok();

@@ -76,12 +76,13 @@ public class SignupResponse
     public int UserId { get; set; }
     public string DisplayName { get; set; } = string.Empty;
     public Instant SignedUpAt { get; set; }
-    public string? Message { get; set; }
+    public string Message { get; set; } = string.Empty;
 }
 
 public class SignUpRequest
 {
-    public string? Message { get; set; }
+    [Required, MinLength(1)]
+    public string Message { get; set; } = string.Empty;
 }
 
 public class UserResponse

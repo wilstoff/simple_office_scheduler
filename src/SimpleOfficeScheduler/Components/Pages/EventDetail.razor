@@ -163,8 +163,15 @@ else
                                 }
                                 else if (!isFull)
                                 {
-                                    <button class="btn btn-sm btn-primary"
-                                            @onclick="() => SignUp(occ.Id)">Sign Up</button>
+                                    <div class="d-flex gap-1 align-items-center">
+                                        <input type="text" class="form-control form-control-sm" style="max-width: 200px;"
+                                               placeholder="Topic to discuss"
+                                               value="@GetSignupMessage(occ.Id)"
+                                               @oninput="(e) => SetSignupMessage(occ.Id, e.Value?.ToString())" />
+                                        <button class="btn btn-sm btn-primary"
+                                                disabled="@(string.IsNullOrWhiteSpace(GetSignupMessage(occ.Id)))"
+                                                @onclick="() => SignUp(occ.Id)">Sign Up</button>
+                                    </div>
                                 }
 
                                 @if (_isOwner)
@@ -196,6 +203,7 @@ else
     private string? _message;
     private bool _messageIsError;
     private UserSearchResult? _selectedTransferUser;
+    private readonly Dictionary<int, string> _signupMessages = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -213,11 +221,19 @@ else
         _isOwner = _event?.OwnerUserId == _currentUserId;
     }
 
+    private string? GetSignupMessage(int occurrenceId) =>
+        _signupMessages.TryGetValue(occurrenceId, out var msg) ? msg : null;
+
+    private void SetSignupMessage(int occurrenceId, string? value) =>
+        _signupMessages[occurrenceId] = value ?? string.Empty;
+
     private async Task SignUp(int occurrenceId)
     {
-        var (success, error) = await EventService.SignUpAsync(occurrenceId, _currentUserId);
+        var message = GetSignupMessage(occurrenceId) ?? string.Empty;
+        var (success, error) = await EventService.SignUpAsync(occurrenceId, _currentUserId, message);
         _message = success ? "Successfully signed up!" : error;
         _messageIsError = !success;
+        if (success) _signupMessages.Remove(occurrenceId);
         await LoadEvent();
     }
 

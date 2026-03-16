@@ -36,7 +36,7 @@ public class CalendarNotifierTests : IntegrationTestBase
         using var sub = notifier.Subscribe(() => tcs.TrySetResult());
 
         // Sign up
-        var response = await Client.PostAsync($"/api/events/{evt.Id}/signup/{occurrenceId}", null);
+        var response = await SignUpForOccurrenceAsync(evt.Id, occurrenceId);
         response.EnsureSuccessStatusCode();
 
         var completed = await Task.WhenAny(tcs.Task, Task.Delay(5000));

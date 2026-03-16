@@ -84,10 +84,11 @@
                                 else if (_selectedOccurrence.Signups.Count < _event.Capacity)
                                 {
                                     <div class="mb-2">
-                                        <input type="text" class="form-control form-control-sm" placeholder="Message to organizer (optional)"
+                                        <input type="text" class="form-control form-control-sm" placeholder="Topic to discuss (required)"
                                                @bind="_signupMessage" @bind:event="oninput" />
                                     </div>
-                                    <button class="btn btn-sm btn-primary" @onclick="SignUp" disabled="@_actionInProgress">
+                                    <button class="btn btn-sm btn-primary" @onclick="SignUp"
+                                            disabled="@(_actionInProgress || string.IsNullOrWhiteSpace(_signupMessage))">
                                         Sign Up
                                     </button>
                                 }
@@ -237,7 +238,7 @@
         _actionInProgress = true;
         _statusMessage = null;
 
-        var (success, error) = await EventService.SignUpAsync(_selectedOccurrence.Id, _currentUserId, _signupMessage);
+        var (success, error) = await EventService.SignUpAsync(_selectedOccurrence.Id, _currentUserId, _signupMessage!);
         if (success)
         {
             _statusMessage = "Signed up!";

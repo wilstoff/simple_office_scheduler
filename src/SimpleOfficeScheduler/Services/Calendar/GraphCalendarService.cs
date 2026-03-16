@@ -25,7 +25,16 @@ public class GraphCalendarService : ICalendarInviteService
         _graphClient = new GraphServiceClient(credential);
     }
 
-    public async Task<string> CreateMeetingAsync(EventOccurrence occurrence, AppUser owner, AppUser signee)
+    private static string BuildMeetingBody(IReadOnlyList<EventSignup> signups)
+    {
+        var withMessages = signups.Where(s => !string.IsNullOrWhiteSpace(s.Message)).ToList();
+        if (withMessages.Count == 0) return "";
+        var items = string.Join("", withMessages.Select(s =>
+            $"<li>{System.Net.WebUtility.HtmlEncode(s.User.DisplayName)} - {System.Net.WebUtility.HtmlEncode(s.Message)}</li>"));
+        return $"<ul>{items}</ul>";
+    }
+
+    public async Task<string> CreateMeetingAsync(EventOccurrence occurrence, AppUser owner, AppUser signee, IReadOnlyList<EventSignup> allSignups)
     {
         var targetEmail = _settings.TargetMailbox;
 
@@ -35,7 +44,7 @@ public class GraphCalendarService : ICalendarInviteService
             Body = new ItemBody
             {
                 ContentType = BodyType.Html,
-                Content = occurrence.Event.Description ?? ""
+                Content = BuildMeetingBody(allSignups)
             },
             Start = new DateTimeTimeZone
             {
@@ -71,7 +80,7 @@ public class GraphCalendarService : ICalendarInviteService
         return created?.Id ?? throw new InvalidOperationException("Graph API did not return an event ID.");
     }
 
-    public async Task AddAttendeeAsync(string graphEventId, AppUser owner, AppUser newSignee)
+    public async Task AddAttendeeAsync(string graphEventId, AppUser owner, AppUser newSignee, IReadOnlyList<EventSignup> allSignups)
     {
         var targetEmail = _settings.TargetMailbox;
 
@@ -87,14 +96,15 @@ public class GraphCalendarService : ICalendarInviteService
 
         await _graphClient.Users[targetEmail].Events[graphEventId].PatchAsync(new GraphEvent
         {
-            Attendees = attendees
+            Attendees = attendees,
+            Body = new ItemBody { ContentType = BodyType.Html, Content = BuildMeetingBody(allSignups) }
         });
 
         _logger.LogInformation("Added attendee {Email} to Teams meeting {GraphEventId}",
             newSignee.Email, graphEventId);
     }
 
-    public async Task RemoveAttendeeAsync(string graphEventId, AppUser attendeeToRemove)
+    public async Task RemoveAttendeeAsync(string graphEventId, AppUser attendeeToRemove, IReadOnlyList<EventSignup> remainingSignups)
     {
         var targetEmail = _settings.TargetMailbox;
 
@@ -107,7 +117,8 @@ public class GraphCalendarService : ICalendarInviteService
 
         await _graphClient.Users[targetEmail].Events[graphEventId].PatchAsync(new GraphEvent
         {
-            Attendees = attendees
+            Attendees = attendees,
+            Body = new ItemBody { ContentType = BodyType.Html, Content = BuildMeetingBody(remainingSignups) }
         });
 
         _logger.LogInformation("Removed attendee {Email} from Teams meeting {GraphEventId}",

@@ -166,4 +166,9 @@ public class IntegrationTestBase : IAsyncLifetime
         });
         response.EnsureSuccessStatusCode();
     }
+
+    protected Task<HttpResponseMessage> SignUpForOccurrenceAsync(int eventId, int occurrenceId, string message = "Test topic")
+    {
+        return Client.PostAsJsonAsync($"/api/events/{eventId}/signup/{occurrenceId}", new { message });
+    }
 }

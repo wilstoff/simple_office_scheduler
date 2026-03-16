@@ -130,8 +130,11 @@ public class EventService : IEventService
             .FirstOrDefaultAsync(o => o.Id == occurrenceId);
     }
 
-    public async Task<(bool Success, string? Error)> SignUpAsync(int occurrenceId, int userId, string? message = null)
+    public async Task<(bool Success, string? Error)> SignUpAsync(int occurrenceId, int userId, string message)
     {
+        if (string.IsNullOrWhiteSpace(message))
+            return (false, "A message is required when signing up.");
+
         var occurrence = await _db.EventOccurrences
             .Include(o => o.Event)
                 .ThenInclude(e => e.Owner)
@@ -165,18 +168,24 @@ public class EventService : IEventService
         _db.EventSignups.Add(signup);
         await _db.SaveChangesAsync();
 
+        // Reload signups with User navigation for calendar body
+        var allSignups = await _db.EventSignups
+            .Include(s => s.User)
+            .Where(s => s.EventOccurrenceId == occurrenceId)
+            .ToListAsync();
+
         // Send calendar invite
         try
         {
             if (string.IsNullOrEmpty(occurrence.GraphEventId))
             {
-                var graphEventId = await _calendarService.CreateMeetingAsync(occurrence, occurrence.Event.Owner, user);
+                var graphEventId = await _calendarService.CreateMeetingAsync(occurrence, occurrence.Event.Owner, user, allSignups);
                 occurrence.GraphEventId = graphEventId;
                 await _db.SaveChangesAsync();
             }
             else
             {
-                await _calendarService.AddAttendeeAsync(occurrence.GraphEventId, occurrence.Event.Owner, user);
+                await _calendarService.AddAttendeeAsync(occurrence.GraphEventId, occurrence.Event.Owner, user, allSignups);
             }
         }
         catch (Exception ex)
@@ -205,6 +214,7 @@ public class EventService : IEventService
             .Include(o => o.Event)
                 .ThenInclude(e => e.Owner)
             .Include(o => o.Signups)
+                .ThenInclude(s => s.User)
             .FirstOrDefaultAsync(o => o.Id == occurrenceId);
         if (!string.IsNullOrEmpty(occurrence?.GraphEventId))
         {
@@ -221,7 +231,7 @@ public class EventService : IEventService
                 {
                     var user = await _db.Users.FindAsync(userId);
                     if (user is not null)
-                        await _calendarService.RemoveAttendeeAsync(occurrence.GraphEventId, user);
+                        await _calendarService.RemoveAttendeeAsync(occurrence.GraphEventId, user, occurrence.Signups.ToList());
                 }
             }
             catch (Exception ex)
@@ -303,13 +313,13 @@ public class EventService : IEventService
             {
                 var firstSignup = signups[0];
                 var graphEventId = await _calendarService.CreateMeetingAsync(
-                    occurrence, occurrence.Event.Owner, firstSignup.User);
+                    occurrence, occurrence.Event.Owner, firstSignup.User, signups);
                 occurrence.GraphEventId = graphEventId;
                 await _db.SaveChangesAsync();
 
                 foreach (var signup in signups.Skip(1))
                 {
-                    await _calendarService.AddAttendeeAsync(graphEventId, occurrence.Event.Owner, signup.User);
+                    await _calendarService.AddAttendeeAsync(graphEventId, occurrence.Event.Owner, signup.User, signups);
                 }
             }
             catch (Exception ex)

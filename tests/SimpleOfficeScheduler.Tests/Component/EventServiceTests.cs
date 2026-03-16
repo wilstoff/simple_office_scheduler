@@ -38,7 +38,7 @@ public class EventServiceTests : IDisposable
 
         _calendarMock = new Mock<ICalendarInviteService>();
         _calendarMock
-            .Setup(c => c.CreateMeetingAsync(It.IsAny<EventOccurrence>(), It.IsAny<AppUser>(), It.IsAny<AppUser>()))
+            .Setup(c => c.CreateMeetingAsync(It.IsAny<EventOccurrence>(), It.IsAny<AppUser>(), It.IsAny<AppUser>(), It.IsAny<IReadOnlyList<EventSignup>>()))
             .ReturnsAsync(() => "graph-id-" + Guid.NewGuid());
 
         _clock = new FakeClock(Instant.FromUtc(2026, 3, 1, 12, 0));
@@ -272,7 +272,7 @@ public class EventServiceTests : IDisposable
         var evt = await _sut.CreateEventAsync(MakeSingleEvent(owner.Id), owner.Id);
         var occurrenceId = (await _db.EventOccurrences.FirstAsync(o => o.EventId == evt.Id)).Id;
 
-        var (success, error) = await _sut.SignUpAsync(occurrenceId, user.Id);
+        var (success, error) = await _sut.SignUpAsync(occurrenceId, user.Id, "Test topic");
 
         Assert.True(success);
         Assert.Null(error);
@@ -285,7 +285,8 @@ public class EventServiceTests : IDisposable
         _calendarMock.Verify(c => c.CreateMeetingAsync(
             It.Is<EventOccurrence>(o => o.Id == occurrenceId),
             It.Is<AppUser>(u => u.Id == owner.Id),
-            It.Is<AppUser>(u => u.Id == user.Id)),
+            It.Is<AppUser>(u => u.Id == user.Id),
+            It.IsAny<IReadOnlyList<EventSignup>>()),
             Times.Once);
 
         // GraphEventId stored
@@ -303,16 +304,17 @@ public class EventServiceTests : IDisposable
         var occurrenceId = (await _db.EventOccurrences.FirstAsync(o => o.EventId == evt.Id)).Id;
 
         // First signup creates meeting
-        await _sut.SignUpAsync(occurrenceId, user1.Id);
+        await _sut.SignUpAsync(occurrenceId, user1.Id, "Topic from user1");
 
         // Second signup should add attendee
-        var (success, _) = await _sut.SignUpAsync(occurrenceId, user2.Id);
+        var (success, _) = await _sut.SignUpAsync(occurrenceId, user2.Id, "Topic from user2");
 
         Assert.True(success);
         _calendarMock.Verify(c => c.AddAttendeeAsync(
             It.IsAny<string>(),
             It.Is<AppUser>(u => u.Id == owner.Id),
-            It.Is<AppUser>(u => u.Id == user2.Id)),
+            It.Is<AppUser>(u => u.Id == user2.Id),
+            It.IsAny<IReadOnlyList<EventSignup>>()),
             Times.Once);
     }
 
@@ -325,8 +327,8 @@ public class EventServiceTests : IDisposable
         var evt = await _sut.CreateEventAsync(MakeSingleEvent(owner.Id, capacity: 1), owner.Id);
         var occurrenceId = (await _db.EventOccurrences.FirstAsync(o => o.EventId == evt.Id)).Id;
 
-        await _sut.SignUpAsync(occurrenceId, user1.Id);
-        var (success, error) = await _sut.SignUpAsync(occurrenceId, user2.Id);
+        await _sut.SignUpAsync(occurrenceId, user1.Id, "Topic from user1");
+        var (success, error) = await _sut.SignUpAsync(occurrenceId, user2.Id, "Topic from user2");
 
         Assert.False(success);
         Assert.Contains("full", error!, StringComparison.OrdinalIgnoreCase);
@@ -340,8 +342,8 @@ public class EventServiceTests : IDisposable
         var evt = await _sut.CreateEventAsync(MakeSingleEvent(owner.Id), owner.Id);
         var occurrenceId = (await _db.EventOccurrences.FirstAsync(o => o.EventId == evt.Id)).Id;
 
-        await _sut.SignUpAsync(occurrenceId, user.Id);
-        var (success, error) = await _sut.SignUpAsync(occurrenceId, user.Id);
+        await _sut.SignUpAsync(occurrenceId, user.Id, "Test topic");
+        var (success, error) = await _sut.SignUpAsync(occurrenceId, user.Id, "Test topic");
 
         Assert.False(success);
         Assert.Contains("already", error!, StringComparison.OrdinalIgnoreCase);
@@ -356,7 +358,7 @@ public class EventServiceTests : IDisposable
         var occurrenceId = (await _db.EventOccurrences.FirstAsync(o => o.EventId == evt.Id)).Id;
 
         await _sut.CancelOccurrenceAsync(occurrenceId, owner.Id);
-        var (success, error) = await _sut.SignUpAsync(occurrenceId, user.Id);
+        var (success, error) = await _sut.SignUpAsync(occurrenceId, user.Id, "Test topic");
 
         Assert.False(success);
         Assert.Contains("cancelled", error!, StringComparison.OrdinalIgnoreCase);
@@ -377,8 +379,8 @@ public class EventServiceTests : IDisposable
         var occurrenceId = (await _db.EventOccurrences.FirstAsync(o => o.EventId == evt.Id)).Id;
 
         // Two signups so cancelling one is NOT the last
-        await _sut.SignUpAsync(occurrenceId, user.Id);
-        await _sut.SignUpAsync(occurrenceId, user2.Id);
+        await _sut.SignUpAsync(occurrenceId, user.Id, "Test topic");
+        await _sut.SignUpAsync(occurrenceId, user2.Id, "Topic from user2");
         var (success, error) = await _sut.CancelSignUpAsync(occurrenceId, user.Id);
 
         Assert.True(success);
@@ -391,7 +393,8 @@ public class EventServiceTests : IDisposable
         // RemoveAttendeeAsync called (not CancelMeetingAsync, since user2 still signed up)
         _calendarMock.Verify(c => c.RemoveAttendeeAsync(
             It.IsAny<string>(),
-            It.Is<AppUser>(u => u.Id == user.Id)),
+            It.Is<AppUser>(u => u.Id == user.Id),
+            It.IsAny<IReadOnlyList<EventSignup>>()),
             Times.Once);
     }
 
@@ -420,7 +423,7 @@ public class EventServiceTests : IDisposable
         var (success, _) = await _sut.CancelSignUpAsync(occurrenceId, user.Id);
 
         Assert.True(success);
-        _calendarMock.Verify(c => c.RemoveAttendeeAsync(It.IsAny<string>(), It.IsAny<AppUser>()), Times.Never);
+        _calendarMock.Verify(c => c.RemoveAttendeeAsync(It.IsAny<string>(), It.IsAny<AppUser>(), It.IsAny<IReadOnlyList<EventSignup>>()), Times.Never);
     }
 
     [Fact]
@@ -446,7 +449,7 @@ public class EventServiceTests : IDisposable
         var occurrenceId = (await _db.EventOccurrences.FirstAsync(o => o.EventId == evt.Id)).Id;
 
         // Sign up user (creates calendar meeting)
-        await _sut.SignUpAsync(occurrenceId, user.Id);
+        await _sut.SignUpAsync(occurrenceId, user.Id, "Test topic");
         var occ = await _db.EventOccurrences.FindAsync(occurrenceId);
         Assert.NotNull(occ!.GraphEventId);
         var graphEventId = occ.GraphEventId;
@@ -459,7 +462,7 @@ public class EventServiceTests : IDisposable
 
         // CancelMeetingAsync should be called (not RemoveAttendeeAsync)
         _calendarMock.Verify(c => c.CancelMeetingAsync(graphEventId!, It.IsAny<AppUser>()), Times.Once);
-        _calendarMock.Verify(c => c.RemoveAttendeeAsync(It.IsAny<string>(), It.Is<AppUser>(u => u.Id == user.Id)), Times.Never);
+        _calendarMock.Verify(c => c.RemoveAttendeeAsync(It.IsAny<string>(), It.Is<AppUser>(u => u.Id == user.Id), It.IsAny<IReadOnlyList<EventSignup>>()), Times.Never);
 
         // GraphEventId should be cleared
         await _db.Entry(occ).ReloadAsync();
@@ -477,7 +480,7 @@ public class EventServiceTests : IDisposable
         var occurrenceId = (await _db.EventOccurrences.FirstAsync(o => o.EventId == evt.Id)).Id;
 
         // Sign up to create a graph event
-        await _sut.SignUpAsync(occurrenceId, user.Id);
+        await _sut.SignUpAsync(occurrenceId, user.Id, "Test topic");
 
         var (success, error) = await _sut.CancelOccurrenceAsync(occurrenceId, owner.Id);
 
@@ -529,7 +532,7 @@ public class EventServiceTests : IDisposable
         var occId = (await _db.EventOccurrences.FirstAsync(o => o.EventId == evt.Id)).Id;
 
         // First signup creates a meeting
-        await _sut.SignUpAsync(occId, user.Id);
+        await _sut.SignUpAsync(occId, user.Id, "Test topic");
         var occ = await _db.EventOccurrences.FindAsync(occId);
         Assert.NotNull(occ!.GraphEventId);
 
@@ -543,10 +546,10 @@ public class EventServiceTests : IDisposable
         // Cancel signup (last signup) → CancelMeetingAsync + clears GraphEventId
         await _sut.CancelSignUpAsync(occId, user.Id);
         // Re-signup with no GraphEventId → creates 3rd meeting
-        await _sut.SignUpAsync(occId, user.Id);
+        await _sut.SignUpAsync(occId, user.Id, "Test topic");
 
         _calendarMock.Verify(c => c.CreateMeetingAsync(
-            It.IsAny<EventOccurrence>(), It.IsAny<AppUser>(), It.IsAny<AppUser>()),
+            It.IsAny<EventOccurrence>(), It.IsAny<AppUser>(), It.IsAny<AppUser>(), It.IsAny<IReadOnlyList<EventSignup>>()),
             Times.Exactly(3));
     }
 
@@ -591,7 +594,7 @@ public class EventServiceTests : IDisposable
         var occId = (await _db.EventOccurrences.FirstAsync(o => o.EventId == evt.Id)).Id;
 
         // Signup creates a meeting, then cancel occurrence clears GraphEventId
-        await _sut.SignUpAsync(occId, user.Id);
+        await _sut.SignUpAsync(occId, user.Id, "Test topic");
         await _sut.CancelOccurrenceAsync(occId, owner.Id);
 
         // Uncancel → should recreate meeting for existing signup
@@ -601,7 +604,7 @@ public class EventServiceTests : IDisposable
         Assert.NotNull(occ!.GraphEventId);  // New meeting created
 
         _calendarMock.Verify(c => c.CreateMeetingAsync(
-            It.IsAny<EventOccurrence>(), It.IsAny<AppUser>(), It.IsAny<AppUser>()),
+            It.IsAny<EventOccurrence>(), It.IsAny<AppUser>(), It.IsAny<AppUser>(), It.IsAny<IReadOnlyList<EventSignup>>()),
             Times.Exactly(2));  // Once for signup, once for uncancel
     }
 
@@ -647,7 +650,7 @@ public class EventServiceTests : IDisposable
             .Where(o => o.EventId == evt.Id)
             .OrderBy(o => o.StartTime)
             .FirstAsync();
-        await _sut.SignUpAsync(firstOcc.Id, user.Id);
+        await _sut.SignUpAsync(firstOcc.Id, user.Id, "Test topic");
 
         var occCountBefore = await _db.EventOccurrences.CountAsync(o => o.EventId == evt.Id);
 
@@ -785,7 +788,7 @@ public class EventServiceTests : IDisposable
         var occurrenceId = (await _db.EventOccurrences.FirstAsync(o => o.EventId == evt.Id)).Id;
 
         // Sign up to create a graph event
-        await _sut.SignUpAsync(occurrenceId, user.Id);
+        await _sut.SignUpAsync(occurrenceId, user.Id, "Test topic");
 
         var (success, error) = await _sut.DeleteEventAsync(evt.Id, owner.Id);
 
@@ -850,7 +853,7 @@ public class EventServiceTests : IDisposable
         bool notified = false;
         using var sub = _notifier.Subscribe(() => notified = true);
 
-        await _sut.SignUpAsync(occId, user.Id);
+        await _sut.SignUpAsync(occId, user.Id, "Test topic");
 
         Assert.True(notified);
     }
@@ -862,7 +865,7 @@ public class EventServiceTests : IDisposable
         var user = await SeedUserAsync();
         var evt = await _sut.CreateEventAsync(MakeSingleEvent(owner.Id), owner.Id);
         var occId = (await _db.EventOccurrences.FirstAsync(o => o.EventId == evt.Id)).Id;
-        await _sut.SignUpAsync(occId, user.Id);
+        await _sut.SignUpAsync(occId, user.Id, "Test topic");
 
         bool notified = false;
         using var sub = _notifier.Subscribe(() => notified = true);
@@ -953,5 +956,89 @@ public class EventServiceTests : IDisposable
         await _sut.DeleteEventAsync(evt.Id, owner.Id);
 
         Assert.True(notified);
+    }
+
+    // ── Signup messages passed to calendar service ───────────────────
+
+    [Fact]
+    public async Task SignUp_WithMessage_PassesSignupsWithMessageToCreateMeeting()
+    {
+        var owner = await SeedOwnerAsync();
+        var user = await SeedUserAsync();
+        var evt = await _sut.CreateEventAsync(MakeSingleEvent(owner.Id), owner.Id);
+        var occurrenceId = (await _db.EventOccurrences.FirstAsync(o => o.EventId == evt.Id)).Id;
+
+        await _sut.SignUpAsync(occurrenceId, user.Id, "Budget review");
+
+        _calendarMock.Verify(c => c.CreateMeetingAsync(
+            It.IsAny<EventOccurrence>(),
+            It.IsAny<AppUser>(),
+            It.IsAny<AppUser>(),
+            It.Is<IReadOnlyList<EventSignup>>(signups =>
+                signups.Count == 1 &&
+                signups[0].Message == "Budget review" &&
+                signups[0].User != null)),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task SignUp_SecondUser_PassesAllSignupsToAddAttendee()
+    {
+        var owner = await SeedOwnerAsync();
+        var user1 = await SeedUserAsync("user1");
+        var user2 = await SeedUserAsync("user2");
+        var evt = await _sut.CreateEventAsync(MakeSingleEvent(owner.Id), owner.Id);
+        var occurrenceId = (await _db.EventOccurrences.FirstAsync(o => o.EventId == evt.Id)).Id;
+
+        await _sut.SignUpAsync(occurrenceId, user1.Id, "Topic A");
+        await _sut.SignUpAsync(occurrenceId, user2.Id, "Topic B");
+
+        _calendarMock.Verify(c => c.AddAttendeeAsync(
+            It.IsAny<string>(),
+            It.IsAny<AppUser>(),
+            It.Is<AppUser>(u => u.Id == user2.Id),
+            It.Is<IReadOnlyList<EventSignup>>(signups =>
+                signups.Count == 2 &&
+                signups.Any(s => s.Message == "Topic A") &&
+                signups.Any(s => s.Message == "Topic B"))),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task CancelSignUp_PassesRemainingSignupsToRemoveAttendee()
+    {
+        var owner = await SeedOwnerAsync();
+        var user1 = await SeedUserAsync("user1");
+        var user2 = await SeedUserAsync("user2");
+        var evt = await _sut.CreateEventAsync(MakeSingleEvent(owner.Id), owner.Id);
+        var occurrenceId = (await _db.EventOccurrences.FirstAsync(o => o.EventId == evt.Id)).Id;
+
+        await _sut.SignUpAsync(occurrenceId, user1.Id, "Topic A");
+        await _sut.SignUpAsync(occurrenceId, user2.Id, "Topic B");
+
+        await _sut.CancelSignUpAsync(occurrenceId, user1.Id);
+
+        // Should pass only user2's signup (the remaining one)
+        _calendarMock.Verify(c => c.RemoveAttendeeAsync(
+            It.IsAny<string>(),
+            It.Is<AppUser>(u => u.Id == user1.Id),
+            It.Is<IReadOnlyList<EventSignup>>(signups =>
+                signups.Count == 1 &&
+                signups[0].Message == "Topic B")),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task SignUp_RequiresMessage()
+    {
+        var owner = await SeedOwnerAsync();
+        var user = await SeedUserAsync();
+        var evt = await _sut.CreateEventAsync(MakeSingleEvent(owner.Id), owner.Id);
+        var occurrenceId = (await _db.EventOccurrences.FirstAsync(o => o.EventId == evt.Id)).Id;
+
+        var (success, error) = await _sut.SignUpAsync(occurrenceId, user.Id, "");
+
+        Assert.False(success);
+        Assert.Contains("message", error!, StringComparison.OrdinalIgnoreCase);
     }
 }

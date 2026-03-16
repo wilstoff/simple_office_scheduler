@@ -214,7 +214,7 @@ public class MultiUserTests : IClassFixture<PlaywrightWebAppFixture>, IAsyncLife
             fetch('/api/events/{eventId}/signup/{occId}', {{
                 method: 'POST',
                 headers: {{ 'Content-Type': 'application/json' }},
-                body: JSON.stringify({{}})
+                body: JSON.stringify({{ message: 'Test topic' }})
             }})
         ");
 

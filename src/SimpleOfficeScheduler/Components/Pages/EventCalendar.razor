@@ -152,6 +152,7 @@
                 await _module.InvokeVoidAsync("clearSelection");
             }
             catch (JSDisconnectedException) { }
+            catch (ObjectDisposedException) { }
         }
     }
 
@@ -164,6 +165,7 @@
                 await _module.InvokeVoidAsync("refetchEvents");
             }
             catch (JSDisconnectedException) { }
+            catch (ObjectDisposedException) { }
         }
     }
 
@@ -177,10 +179,8 @@
                 await _module.InvokeVoidAsync("destroyCalendar", _ownerId);
                 await _module.DisposeAsync();
             }
-            catch (JSDisconnectedException)
-            {
-                // Circuit already disconnected
-            }
+            catch (JSDisconnectedException) { }
+            catch (ObjectDisposedException) { }
         }
         _dotNetRef?.Dispose();
     }

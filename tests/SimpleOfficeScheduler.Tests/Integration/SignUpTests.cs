@@ -13,7 +13,7 @@ public class SignUpTests : IntegrationTestBase
         var evt = await CreateEventAsync("Sign Up Event", capacity: 5);
         var occurrenceId = evt.Occurrences.First().Id;
 
-        var response = await Client.PostAsync($"/api/events/{evt.Id}/signup/{occurrenceId}", null);
+        var response = await SignUpForOccurrenceAsync(evt.Id, occurrenceId);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         // Verify signup count
@@ -29,7 +29,7 @@ public class SignUpTests : IntegrationTestBase
         var occurrenceId = evt.Occurrences.First().Id;
 
         // First signup (as testadmin)
-        var first = await Client.PostAsync($"/api/events/{evt.Id}/signup/{occurrenceId}", null);
+        var first = await SignUpForOccurrenceAsync(evt.Id, occurrenceId);
         Assert.Equal(HttpStatusCode.OK, first.StatusCode);
 
         // Create second user and log in as them
@@ -37,7 +37,7 @@ public class SignUpTests : IntegrationTestBase
         await LoginAsAsync("user2");
 
         // Second signup should fail (capacity = 1)
-        var second = await Client.PostAsync($"/api/events/{evt.Id}/signup/{occurrenceId}", null);
+        var second = await SignUpForOccurrenceAsync(evt.Id, occurrenceId);
         Assert.Equal(HttpStatusCode.BadRequest, second.StatusCode);
 
         var body = await second.Content.ReadFromJsonAsync<ErrorResponse>();
@@ -51,9 +51,9 @@ public class SignUpTests : IntegrationTestBase
         var evt = await CreateEventAsync("Dup Event", capacity: 5);
         var occurrenceId = evt.Occurrences.First().Id;
 
-        await Client.PostAsync($"/api/events/{evt.Id}/signup/{occurrenceId}", null);
+        await SignUpForOccurrenceAsync(evt.Id, occurrenceId);
 
-        var duplicate = await Client.PostAsync($"/api/events/{evt.Id}/signup/{occurrenceId}", null);
+        var duplicate = await SignUpForOccurrenceAsync(evt.Id, occurrenceId);
         Assert.Equal(HttpStatusCode.BadRequest, duplicate.StatusCode);
 
         var body = await duplicate.Content.ReadFromJsonAsync<ErrorResponse>();
@@ -74,7 +74,7 @@ public class SignUpTests : IntegrationTestBase
         await CreateSecondUserAsync("user2");
         await LoginAsAsync("user2");
 
-        var response = await Client.PostAsync($"/api/events/{evt.Id}/signup/{occurrenceId}", null);
+        var response = await SignUpForOccurrenceAsync(evt.Id, occurrenceId);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
 
         var body = await response.Content.ReadFromJsonAsync<ErrorResponse>();
@@ -89,7 +89,7 @@ public class SignUpTests : IntegrationTestBase
         var occurrenceId = evt.Occurrences.First().Id;
 
         // Sign up
-        await Client.PostAsync($"/api/events/{evt.Id}/signup/{occurrenceId}", null);
+        await SignUpForOccurrenceAsync(evt.Id, occurrenceId);
 
         // Verify signed up
         var afterSignup = await Client.GetFromJsonAsync<EventResponse>($"/api/events/{evt.Id}", JsonOptions);
@@ -102,6 +102,17 @@ public class SignUpTests : IntegrationTestBase
         // Verify count decreased
         var afterCancel = await Client.GetFromJsonAsync<EventResponse>($"/api/events/{evt.Id}", JsonOptions);
         Assert.Equal(0, afterCancel!.Occurrences.First().SignupCount);
+    }
+
+    [Fact]
+    public async Task SignUp_WithoutMessage_ReturnsBadRequest()
+    {
+        await LoginAsync();
+        var evt = await CreateEventAsync("No Message Event", capacity: 5);
+        var occurrenceId = evt.Occurrences.First().Id;
+
+        var response = await Client.PostAsync($"/api/events/{evt.Id}/signup/{occurrenceId}", null);
+        Assert.Equal(HttpStatusCode.UnsupportedMediaType, response.StatusCode);
     }
 
     private class ErrorResponse
