@@ -18,6 +18,7 @@ public class CreateEventRequest
     public LocalDateTime EndTime { get; set; }
     public int Capacity { get; set; } = 1;
     public string? TimeZoneId { get; set; }
+    public EventType EventType { get; set; } = EventType.OfficeHours;
     public RecurrencePatternDto? Recurrence { get; set; }
 }
 
@@ -53,8 +54,10 @@ public class EventResponse
     public LocalDateTime EndTime { get; set; }
     public int Capacity { get; set; }
     public string TimeZoneId { get; set; } = string.Empty;
+    public EventType EventType { get; set; }
     public RecurrencePatternDto? Recurrence { get; set; }
     public List<OccurrenceResponse> Occurrences { get; set; } = new();
+    public List<ReminderDefinitionResponse> ReminderDefinitions { get; set; } = new();
 }
 
 public class OccurrenceResponse
@@ -67,8 +70,15 @@ public class OccurrenceResponse
     public Instant EndTimeUtc { get; set; }
     public string TimeZoneId { get; set; } = string.Empty;
     public bool IsCancelled { get; set; }
+    public bool IsLightningTalks { get; set; }
+    public int? LightningTalksCapacity { get; set; }
+    public string? NamePrefix { get; set; }
+    public string? NameSuffix { get; set; }
+    public string DisplayName { get; set; } = string.Empty;
     public int SignupCount { get; set; }
     public List<SignupResponse> Signups { get; set; } = new();
+    public List<ContributorResponse> Contributors { get; set; } = new();
+    public List<ReminderValueResponse> ReminderValues { get; set; } = new();
 }
 
 public class SignupResponse
@@ -83,6 +93,52 @@ public class SignUpRequest
 {
     [Required, MinLength(1)]
     public string Message { get; set; } = string.Empty;
+}
+
+public class SetContributorsRequest
+{
+    public List<int> UserIds { get; set; } = new();
+}
+
+public class UpdateOccurrenceNameRequest
+{
+    public string? NamePrefix { get; set; }
+    public string? NameSuffix { get; set; }
+}
+
+public class ToggleLightningTalksRequest
+{
+    public bool IsLightningTalks { get; set; }
+    public int? Capacity { get; set; }
+}
+
+public class ContributorResponse
+{
+    public int UserId { get; set; }
+    public string DisplayName { get; set; } = string.Empty;
+}
+
+public class ReminderDefinitionResponse
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public int DisplayOrder { get; set; }
+}
+
+public class ReminderValueResponse
+{
+    public int ReminderDefinitionId { get; set; }
+    public bool Value { get; set; }
+}
+
+public class SetReminderDefinitionsRequest
+{
+    public List<string> Names { get; set; } = new();
+}
+
+public class SetReminderValueRequest
+{
+    public bool Value { get; set; }
 }
 
 public class UserResponse

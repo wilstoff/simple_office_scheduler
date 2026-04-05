@@ -137,4 +137,74 @@ public class GraphCalendarService : ICalendarInviteService
 
         _logger.LogInformation("Cancelled Teams meeting {GraphEventId}", graphEventId);
     }
+
+    public async Task<string> CreateMeetingForContributorsAsync(EventOccurrence occurrence, AppUser owner, IReadOnlyList<AppUser> contributors)
+    {
+        var targetEmail = _settings.TargetMailbox;
+
+        var attendees = new List<Attendee>
+        {
+            new()
+            {
+                EmailAddress = new EmailAddress { Address = owner.Email, Name = owner.DisplayName },
+                Type = AttendeeType.Required
+            }
+        };
+        attendees.AddRange(contributors.Select(c => new Attendee
+        {
+            EmailAddress = new EmailAddress { Address = c.Email, Name = c.DisplayName },
+            Type = AttendeeType.Required
+        }));
+
+        var graphEvent = new GraphEvent
+        {
+            Subject = occurrence.DisplayName,
+            Start = new DateTimeTimeZone
+            {
+                DateTime = occurrence.StartTime.ToDateTimeUnspecified().ToString("yyyy-MM-ddTHH:mm:ss"),
+                TimeZone = occurrence.Event.TimeZoneId
+            },
+            End = new DateTimeTimeZone
+            {
+                DateTime = occurrence.EndTime.ToDateTimeUnspecified().ToString("yyyy-MM-ddTHH:mm:ss"),
+                TimeZone = occurrence.Event.TimeZoneId
+            },
+            IsOnlineMeeting = true,
+            OnlineMeetingProvider = OnlineMeetingProviderType.TeamsForBusiness,
+            Attendees = attendees
+        };
+
+        var created = await _graphClient.Users[targetEmail].Events.PostAsync(graphEvent);
+        _logger.LogInformation("Created Teams meeting {GraphEventId} for '{Title}' with {Count} contributors",
+            created?.Id, occurrence.DisplayName, contributors.Count);
+
+        return created?.Id ?? throw new InvalidOperationException("Graph API did not return an event ID.");
+    }
+
+    public async Task UpdateMeetingAttendeesAsync(string graphEventId, AppUser owner, IReadOnlyList<AppUser> contributors)
+    {
+        var targetEmail = _settings.TargetMailbox;
+
+        var attendees = new List<Attendee>
+        {
+            new()
+            {
+                EmailAddress = new EmailAddress { Address = owner.Email, Name = owner.DisplayName },
+                Type = AttendeeType.Required
+            }
+        };
+        attendees.AddRange(contributors.Select(c => new Attendee
+        {
+            EmailAddress = new EmailAddress { Address = c.Email, Name = c.DisplayName },
+            Type = AttendeeType.Required
+        }));
+
+        await _graphClient.Users[targetEmail].Events[graphEventId].PatchAsync(new GraphEvent
+        {
+            Attendees = attendees
+        });
+
+        _logger.LogInformation("Updated attendees for Teams meeting {GraphEventId} with {Count} contributors",
+            graphEventId, contributors.Count);
+    }
 }

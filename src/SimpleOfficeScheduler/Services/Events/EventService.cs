@@ -84,9 +84,15 @@ public class EventService : IEventService
     {
         return await _db.Events
             .Include(e => e.Owner)
+            .Include(e => e.ReminderDefinitions.OrderBy(d => d.DisplayOrder))
             .Include(e => e.Occurrences)
                 .ThenInclude(o => o.Signups)
                     .ThenInclude(s => s.User)
+            .Include(e => e.Occurrences)
+                .ThenInclude(o => o.Contributors)
+                    .ThenInclude(c => c.User)
+            .Include(e => e.Occurrences)
+                .ThenInclude(o => o.ReminderValues)
             .FirstOrDefaultAsync(e => e.Id == eventId);
     }
 
@@ -115,6 +121,8 @@ public class EventService : IEventService
             .Include(o => o.Event)
                 .ThenInclude(e => e.Owner)
             .Include(o => o.Signups)
+            .Include(o => o.Contributors)
+                .ThenInclude(c => c.User)
             .Where(o => o.StartTime >= start && o.StartTime <= end)
             .OrderBy(o => o.StartTime)
             .ToListAsync();
@@ -127,6 +135,8 @@ public class EventService : IEventService
                 .ThenInclude(e => e.Owner)
             .Include(o => o.Signups)
                 .ThenInclude(s => s.User)
+            .Include(o => o.Contributors)
+                .ThenInclude(c => c.User)
             .FirstOrDefaultAsync(o => o.Id == occurrenceId);
     }
 
@@ -144,13 +154,17 @@ public class EventService : IEventService
         if (occurrence is null)
             return (false, "Occurrence not found.");
 
+        if (occurrence.Event.EventType == EventType.TechMeeting && !occurrence.IsLightningTalks)
+            return (false, "Signups are not available for this occurrence. Contributors are assigned by the owner.");
+
         if (occurrence.IsCancelled)
             return (false, "This occurrence has been cancelled.");
 
         if (occurrence.Signups.Any(s => s.UserId == userId))
             return (false, "You are already signed up for this occurrence.");
 
-        if (occurrence.Signups.Count >= occurrence.Event.Capacity)
+        var effectiveCapacity = occurrence.LightningTalksCapacity ?? occurrence.Event.Capacity;
+        if (occurrence.Signups.Count >= effectiveCapacity)
             return (false, "This occurrence is full.");
 
         var user = await _db.Users.FindAsync(userId);
@@ -452,6 +466,241 @@ public class EventService : IEventService
         evt.UpdatedAt = Now;
         await _db.SaveChangesAsync();
 
+        _notifier.Notify();
+        return (true, null);
+    }
+
+    // ── Tech Meeting: Contributors ──────────────────────────────────
+
+    public async Task<(bool Success, string? Error)> SetContributorsAsync(int occurrenceId, int userId, List<int> contributorUserIds)
+    {
+        var occurrence = await _db.EventOccurrences
+            .Include(o => o.Event)
+            .Include(o => o.Contributors)
+            .FirstOrDefaultAsync(o => o.Id == occurrenceId);
+
+        if (occurrence is null)
+            return (false, "Occurrence not found.");
+
+        if (occurrence.Event.EventType != EventType.TechMeeting)
+            return (false, "Contributors can only be assigned to tech meeting events.");
+
+        if (occurrence.Event.OwnerUserId != userId)
+            return (false, "Only the event owner can assign contributors.");
+
+        if (occurrence.IsLightningTalks)
+            return (false, "Cannot assign contributors to a lightning talks occurrence.");
+
+        // Remove existing contributors
+        _db.OccurrenceContributors.RemoveRange(occurrence.Contributors);
+
+        // Add new contributors
+        foreach (var contributorId in contributorUserIds)
+        {
+            _db.OccurrenceContributors.Add(new OccurrenceContributor
+            {
+                EventOccurrenceId = occurrenceId,
+                UserId = contributorId
+            });
+        }
+
+        await _db.SaveChangesAsync();
+
+        // Calendar integration
+        var owner = await _db.Users.FindAsync(occurrence.Event.OwnerUserId);
+        if (contributorUserIds.Count > 0)
+        {
+            var contributors = await _db.Users
+                .Where(u => contributorUserIds.Contains(u.Id))
+                .ToListAsync();
+
+            if (occurrence.GraphEventId is not null)
+            {
+                await _calendarService.UpdateMeetingAttendeesAsync(occurrence.GraphEventId, owner!, contributors);
+            }
+            else
+            {
+                var graphEventId = await _calendarService.CreateMeetingForContributorsAsync(occurrence, owner!, contributors);
+                occurrence.GraphEventId = graphEventId;
+                await _db.SaveChangesAsync();
+            }
+        }
+        else if (occurrence.GraphEventId is not null)
+        {
+            await _calendarService.CancelMeetingAsync(occurrence.GraphEventId, owner!);
+            occurrence.GraphEventId = null;
+            await _db.SaveChangesAsync();
+        }
+
+        _notifier.Notify();
+        return (true, null);
+    }
+
+    public async Task<(bool Success, string? Error)> ToggleLightningTalksAsync(int occurrenceId, int userId, bool isLightningTalks, int? capacity = null)
+    {
+        var occurrence = await _db.EventOccurrences
+            .Include(o => o.Event)
+            .Include(o => o.Contributors)
+            .Include(o => o.Signups)
+            .FirstOrDefaultAsync(o => o.Id == occurrenceId);
+
+        if (occurrence is null)
+            return (false, "Occurrence not found.");
+
+        if (occurrence.Event.EventType != EventType.TechMeeting)
+            return (false, "Lightning talks are only available for tech meeting events.");
+
+        if (occurrence.Event.OwnerUserId != userId)
+            return (false, "Only the event owner can toggle lightning talks.");
+
+        var owner = await _db.Users.FindAsync(occurrence.Event.OwnerUserId);
+
+        if (isLightningTalks)
+        {
+            // Remove contributors when switching to lightning talks
+            _db.OccurrenceContributors.RemoveRange(occurrence.Contributors);
+        }
+        else
+        {
+            // Remove signups when switching off lightning talks
+            _db.EventSignups.RemoveRange(occurrence.Signups);
+        }
+
+        // Cancel existing Teams meeting if any
+        if (occurrence.GraphEventId is not null)
+        {
+            await _calendarService.CancelMeetingAsync(occurrence.GraphEventId, owner!);
+            occurrence.GraphEventId = null;
+        }
+
+        occurrence.IsLightningTalks = isLightningTalks;
+        occurrence.LightningTalksCapacity = isLightningTalks ? capacity : null;
+        occurrence.NameSuffix = isLightningTalks ? "Lightning Talks" : null;
+        await _db.SaveChangesAsync();
+
+        _notifier.Notify();
+        return (true, null);
+    }
+
+    public async Task<(bool Success, string? Error)> UpdateOccurrenceNameAsync(int occurrenceId, int userId, string? namePrefix, string? nameSuffix)
+    {
+        var occurrence = await _db.EventOccurrences
+            .Include(o => o.Event)
+            .Include(o => o.Contributors)
+            .FirstOrDefaultAsync(o => o.Id == occurrenceId);
+
+        if (occurrence is null)
+            return (false, "Occurrence not found.");
+
+        if (occurrence.Event.EventType != EventType.TechMeeting)
+            return (false, "Occurrence names can only be edited for tech meeting events.");
+
+        var isOwner = occurrence.Event.OwnerUserId == userId;
+        var isContributor = occurrence.Contributors.Any(c => c.UserId == userId);
+
+        if (!isOwner && !isContributor)
+            return (false, "Only the event owner or an assigned contributor can edit the occurrence name.");
+
+        if (namePrefix is not null)
+        {
+            if (!isOwner)
+                return (false, "Only the event owner can edit the name prefix.");
+            occurrence.NamePrefix = namePrefix;
+        }
+
+        if (nameSuffix is not null)
+        {
+            occurrence.NameSuffix = nameSuffix;
+        }
+
+        await _db.SaveChangesAsync();
+
+        _notifier.Notify();
+        return (true, null);
+    }
+
+    // ── Tech Meeting: Reminders ─────────────────────────────────────
+
+    public async Task<(bool Success, string? Error)> SetReminderDefinitionsAsync(int eventId, int userId, List<string> reminderNames)
+    {
+        var evt = await _db.Events
+            .Include(e => e.ReminderDefinitions)
+            .FirstOrDefaultAsync(e => e.Id == eventId);
+
+        if (evt is null)
+            return (false, "Event not found.");
+
+        if (evt.OwnerUserId != userId)
+            return (false, "Only the event owner can manage reminders.");
+
+        if (evt.EventType != EventType.TechMeeting)
+            return (false, "Reminders are only available for tech meeting events.");
+
+        if (reminderNames.Count > 10)
+            return (false, "Maximum 10 reminders allowed.");
+
+        if (reminderNames.Any(string.IsNullOrWhiteSpace))
+            return (false, "Reminder names cannot be empty.");
+
+        if (reminderNames.Distinct(StringComparer.OrdinalIgnoreCase).Count() != reminderNames.Count)
+            return (false, "Reminder names must be unique.");
+
+        // Diff: keep existing by name, remove missing, add new
+        var existingByName = evt.ReminderDefinitions.ToDictionary(d => d.Name, StringComparer.OrdinalIgnoreCase);
+        var toRemove = evt.ReminderDefinitions.Where(d => !reminderNames.Contains(d.Name, StringComparer.OrdinalIgnoreCase)).ToList();
+        _db.EventReminderDefinitions.RemoveRange(toRemove);
+
+        for (var i = 0; i < reminderNames.Count; i++)
+        {
+            if (existingByName.TryGetValue(reminderNames[i], out var existing))
+            {
+                existing.DisplayOrder = i;
+            }
+            else
+            {
+                _db.EventReminderDefinitions.Add(new EventReminderDefinition
+                {
+                    EventId = eventId,
+                    Name = reminderNames[i],
+                    DisplayOrder = i
+                });
+            }
+        }
+
+        await _db.SaveChangesAsync();
+        _notifier.Notify();
+        return (true, null);
+    }
+
+    public async Task<(bool Success, string? Error)> SetReminderValueAsync(int occurrenceId, int userId, int reminderDefinitionId, bool value)
+    {
+        var occurrence = await _db.EventOccurrences
+            .Include(o => o.Event)
+            .Include(o => o.ReminderValues)
+            .FirstOrDefaultAsync(o => o.Id == occurrenceId);
+
+        if (occurrence is null)
+            return (false, "Occurrence not found.");
+
+        if (occurrence.Event.OwnerUserId != userId)
+            return (false, "Only the event owner can set reminder values.");
+
+        var existing = occurrence.ReminderValues.FirstOrDefault(v => v.ReminderDefinitionId == reminderDefinitionId);
+        if (existing is not null)
+        {
+            existing.Value = value;
+        }
+        else
+        {
+            _db.OccurrenceReminderValues.Add(new OccurrenceReminderValue
+            {
+                EventOccurrenceId = occurrenceId,
+                ReminderDefinitionId = reminderDefinitionId,
+                Value = value
+            });
+        }
+
+        await _db.SaveChangesAsync();
         _notifier.Notify();
         return (true, null);
     }
