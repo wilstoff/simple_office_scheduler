@@ -114,7 +114,8 @@ public class IntegrationTestBase : IAsyncLifetime
         LocalDateTime? endTime = null,
         int capacity = 5,
         string? timeZoneId = null,
-        RecurrencePatternDto? recurrence = null)
+        RecurrencePatternDto? recurrence = null,
+        EventType eventType = EventType.OfficeHours)
     {
         var start = startTime ?? LocalDateTime.FromDateTime(DateTime.Now.Date.AddDays(1).AddHours(9));
         var end = endTime ?? start.PlusHours(1);
@@ -127,6 +128,7 @@ public class IntegrationTestBase : IAsyncLifetime
             EndTime = end,
             Capacity = capacity,
             TimeZoneId = timeZoneId,
+            EventType = eventType,
             Recurrence = recurrence
         };
 

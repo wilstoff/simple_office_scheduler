@@ -27,6 +27,15 @@ public class SeedUserSettings
     public string Password { get; set; } = "Test123!";
     public string DisplayName { get; set; } = "Test Admin";
     public string Email { get; set; } = "testadmin@localhost";
+    public List<SeedExtraUser> ExtraUsers { get; set; } = new();
+}
+
+public class SeedExtraUser
+{
+    public string Username { get; set; } = string.Empty;
+    public string Password { get; set; } = string.Empty;
+    public string DisplayName { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
 }
 
 public class RecurrenceSettings

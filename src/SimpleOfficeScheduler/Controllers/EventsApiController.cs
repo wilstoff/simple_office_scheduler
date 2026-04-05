@@ -38,22 +38,34 @@ public class EventsApiController : ControllerBase
             var startUtc = TimeZoneHelper.WallClockToUtc(o.StartTime.ToDateTimeUnspecified(), o.Event.TimeZoneId);
             var endUtc = TimeZoneHelper.WallClockToUtc(o.EndTime.ToDateTimeUnspecified(), o.Event.TimeZoneId);
 
+            var isTechMeeting = o.Event.EventType == EventType.TechMeeting;
+            var isLightningTalks = o.IsLightningTalks;
+            var effectiveCapacity = o.LightningTalksCapacity ?? o.Event.Capacity;
+            var color = o.IsCancelled ? "#ccc"
+                : isLightningTalks && o.Signups.Count >= effectiveCapacity ? "#ffc107"
+                : isTechMeeting ? "#198754"
+                : o.Signups.Count >= o.Event.Capacity ? "#ffc107"
+                : "#0d6efd";
+
             return new
             {
                 id = o.Id.ToString(),
-                title = o.Event.Title,
+                title = isTechMeeting ? o.DisplayName : o.Event.Title,
                 start = startUtc.ToString("yyyy-MM-ddTHH:mm:ssZ"),
                 end = endUtc.ToString("yyyy-MM-ddTHH:mm:ssZ"),
-                color = o.IsCancelled ? "#ccc" : (o.Signups.Count >= o.Event.Capacity ? "#ffc107" : "#0d6efd"),
+                color,
                 url = $"/events/{o.EventId}",
                 extendedProps = new
                 {
-                    capacity = o.Event.Capacity,
+                    capacity = o.LightningTalksCapacity ?? o.Event.Capacity,
                     signedUp = o.Signups.Count,
                     isCancelled = o.IsCancelled,
                     eventId = o.EventId,
                     owner = o.Event.Owner.DisplayName,
-                    timeZoneId = o.Event.TimeZoneId
+                    timeZoneId = o.Event.TimeZoneId,
+                    eventType = o.Event.EventType.ToString(),
+                    isLightningTalks = o.IsLightningTalks,
+                    contributors = o.Contributors?.Select(c => c.User.DisplayName).ToList() ?? new List<string>()
                 }
             };
         });
@@ -90,6 +102,7 @@ public class EventsApiController : ControllerBase
             EndTime = request.EndTime,
             Capacity = request.Capacity,
             TimeZoneId = request.TimeZoneId ?? TimeZoneHelper.GetLocalTimeZoneId(),
+            EventType = request.EventType,
             Recurrence = request.Recurrence is not null ? new RecurrencePattern
             {
                 Type = request.Recurrence.Type,
@@ -201,6 +214,62 @@ public class EventsApiController : ControllerBase
         return Ok();
     }
 
+    // ── Tech Meeting Endpoints ──────────────────────────────────────
+
+    [HttpPost("occurrences/{occurrenceId:int}/contributors")]
+    [Authorize]
+    public async Task<IActionResult> SetContributors(int occurrenceId, [FromBody] SetContributorsRequest request)
+    {
+        var (success, error) = await _eventService.SetContributorsAsync(occurrenceId, GetUserId(), request.UserIds);
+        if (!success) return BadRequest(new { error });
+
+        return Ok();
+    }
+
+    [HttpPost("occurrences/{occurrenceId:int}/lightning-talks")]
+    [Authorize]
+    public async Task<IActionResult> ToggleLightningTalks(int occurrenceId, [FromBody] ToggleLightningTalksRequest request)
+    {
+        var (success, error) = await _eventService.ToggleLightningTalksAsync(occurrenceId, GetUserId(), request.IsLightningTalks, request.Capacity);
+        if (!success) return BadRequest(new { error });
+
+        return Ok();
+    }
+
+    [HttpPatch("occurrences/{occurrenceId:int}/name")]
+    [Authorize]
+    public async Task<IActionResult> UpdateOccurrenceName(int occurrenceId, [FromBody] UpdateOccurrenceNameRequest request)
+    {
+        var (success, error) = await _eventService.UpdateOccurrenceNameAsync(occurrenceId, GetUserId(), request.NamePrefix, request.NameSuffix);
+        if (!success) return BadRequest(new { error });
+
+        return Ok();
+    }
+
+    // ── Reminder Endpoints ────────────────────────────────────────
+
+    [HttpPut("{id:int}/reminders")]
+    [Authorize]
+    public async Task<IActionResult> SetReminderDefinitions(int id, [FromBody] SetReminderDefinitionsRequest request)
+    {
+        var (success, error) = await _eventService.SetReminderDefinitionsAsync(id, GetUserId(), request.Names);
+        if (!success) return BadRequest(new { error });
+
+        return Ok();
+    }
+
+    [HttpPost("occurrences/{occurrenceId:int}/reminders/{definitionId:int}")]
+    [Authorize]
+    public async Task<IActionResult> SetReminderValue(int occurrenceId, int definitionId, [FromBody] SetReminderValueRequest request)
+    {
+        var (success, error) = await _eventService.SetReminderValueAsync(occurrenceId, GetUserId(), definitionId, request.Value);
+        if (!success) return BadRequest(new { error });
+
+        return Ok();
+    }
+
+    // ── Response Mapping ────────────────────────────────────────────
+
     private static EventResponse MapEventResponse(Event evt) => new()
     {
         Id = evt.Id,
@@ -212,6 +281,7 @@ public class EventsApiController : ControllerBase
         EndTime = evt.EndTime,
         Capacity = evt.Capacity,
         TimeZoneId = evt.TimeZoneId,
+        EventType = evt.EventType,
         Recurrence = evt.Recurrence is not null ? new RecurrencePatternDto
         {
             Type = evt.Recurrence.Type,
@@ -220,6 +290,12 @@ public class EventsApiController : ControllerBase
             RecurrenceEndDate = evt.Recurrence.RecurrenceEndDate,
             MaxOccurrences = evt.Recurrence.MaxOccurrences
         } : null,
+        ReminderDefinitions = evt.ReminderDefinitions?.OrderBy(d => d.DisplayOrder).Select(d => new ReminderDefinitionResponse
+        {
+            Id = d.Id,
+            Name = d.Name,
+            DisplayOrder = d.DisplayOrder
+        }).ToList() ?? new(),
         Occurrences = evt.Occurrences?.Select(o =>
         {
             var zone = TimeZoneHelper.GetZone(evt.TimeZoneId);
@@ -236,6 +312,11 @@ public class EventsApiController : ControllerBase
                 EndTimeUtc = endUtc,
                 TimeZoneId = evt.TimeZoneId,
                 IsCancelled = o.IsCancelled,
+                IsLightningTalks = o.IsLightningTalks,
+                LightningTalksCapacity = o.LightningTalksCapacity,
+                NamePrefix = o.NamePrefix,
+                NameSuffix = o.NameSuffix,
+                DisplayName = o.DisplayName,
                 SignupCount = o.Signups?.Count ?? 0,
                 Signups = o.Signups?.Select(s => new SignupResponse
                 {
@@ -243,6 +324,16 @@ public class EventsApiController : ControllerBase
                     DisplayName = s.User?.DisplayName ?? "",
                     SignedUpAt = s.SignedUpAt,
                     Message = s.Message
+                }).ToList() ?? new(),
+                Contributors = o.Contributors?.Select(c => new ContributorResponse
+                {
+                    UserId = c.UserId,
+                    DisplayName = c.User?.DisplayName ?? ""
+                }).ToList() ?? new(),
+                ReminderValues = o.ReminderValues?.Select(v => new ReminderValueResponse
+                {
+                    ReminderDefinitionId = v.ReminderDefinitionId,
+                    Value = v.Value
                 }).ToList() ?? new()
             };
         }).OrderBy(o => o.StartTime).ToList() ?? new()

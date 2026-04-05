@@ -16,4 +16,5 @@ public class AppUser
 
     public ICollection<Event> OwnedEvents { get; set; } = new List<Event>();
     public ICollection<EventSignup> Signups { get; set; } = new List<EventSignup>();
+    public ICollection<OccurrenceContributor> Contributions { get; set; } = new List<OccurrenceContributor>();
 }

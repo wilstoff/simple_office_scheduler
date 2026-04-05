@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using SimpleOfficeScheduler.Data;
 
@@ -10,9 +11,11 @@ using SimpleOfficeScheduler.Data;
 namespace SimpleOfficeScheduler.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260404230657_RenameLightningRoundToTalksAndAddCapacity")]
+    partial class RenameLightningRoundToTalksAndAddCapacity
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.5");
@@ -162,31 +165,6 @@ namespace SimpleOfficeScheduler.Migrations
                     b.ToTable("EventOccurrences");
                 });
 
-            modelBuilder.Entity("SimpleOfficeScheduler.Models.EventReminderDefinition", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("DisplayOrder")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("EventId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("EventId", "Name")
-                        .IsUnique();
-
-                    b.ToTable("EventReminderDefinitions");
-                });
-
             modelBuilder.Entity("SimpleOfficeScheduler.Models.EventSignup", b =>
                 {
                     b.Property<int>("Id")
@@ -236,31 +214,6 @@ namespace SimpleOfficeScheduler.Migrations
                         .IsUnique();
 
                     b.ToTable("OccurrenceContributors");
-                });
-
-            modelBuilder.Entity("SimpleOfficeScheduler.Models.OccurrenceReminderValue", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("EventOccurrenceId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("ReminderDefinitionId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<bool>("Value")
-                        .HasColumnType("INTEGER");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ReminderDefinitionId");
-
-                    b.HasIndex("EventOccurrenceId", "ReminderDefinitionId")
-                        .IsUnique();
-
-                    b.ToTable("OccurrenceReminderValues");
                 });
 
             modelBuilder.Entity("SimpleOfficeScheduler.Models.Event", b =>
@@ -321,17 +274,6 @@ namespace SimpleOfficeScheduler.Migrations
                     b.Navigation("Event");
                 });
 
-            modelBuilder.Entity("SimpleOfficeScheduler.Models.EventReminderDefinition", b =>
-                {
-                    b.HasOne("SimpleOfficeScheduler.Models.Event", "Event")
-                        .WithMany("ReminderDefinitions")
-                        .HasForeignKey("EventId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Event");
-                });
-
             modelBuilder.Entity("SimpleOfficeScheduler.Models.EventSignup", b =>
                 {
                     b.HasOne("SimpleOfficeScheduler.Models.EventOccurrence", "Occurrence")
@@ -370,25 +312,6 @@ namespace SimpleOfficeScheduler.Migrations
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("SimpleOfficeScheduler.Models.OccurrenceReminderValue", b =>
-                {
-                    b.HasOne("SimpleOfficeScheduler.Models.EventOccurrence", "Occurrence")
-                        .WithMany("ReminderValues")
-                        .HasForeignKey("EventOccurrenceId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("SimpleOfficeScheduler.Models.EventReminderDefinition", "ReminderDefinition")
-                        .WithMany()
-                        .HasForeignKey("ReminderDefinitionId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Occurrence");
-
-                    b.Navigation("ReminderDefinition");
-                });
-
             modelBuilder.Entity("SimpleOfficeScheduler.Models.AppUser", b =>
                 {
                     b.Navigation("Contributions");
@@ -401,15 +324,11 @@ namespace SimpleOfficeScheduler.Migrations
             modelBuilder.Entity("SimpleOfficeScheduler.Models.Event", b =>
                 {
                     b.Navigation("Occurrences");
-
-                    b.Navigation("ReminderDefinitions");
                 });
 
             modelBuilder.Entity("SimpleOfficeScheduler.Models.EventOccurrence", b =>
                 {
                     b.Navigation("Contributors");
-
-                    b.Navigation("ReminderValues");
 
                     b.Navigation("Signups");
                 });

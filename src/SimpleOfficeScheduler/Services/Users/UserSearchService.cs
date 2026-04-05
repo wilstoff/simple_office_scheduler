@@ -124,7 +124,7 @@ public class UserSearchService : IUserSearchService
 
             await connection.ConnectAsync(_adSettings.Host, _adSettings.Port);
             var bindDn = $"{_adSettings.Domain}\\{_adSettings.ServiceAccountUsername}";
-            await connection.BindAsync(bindDn, _adSettings.ServiceAccountPassword);
+            await connection.BindAsync(bindDn, _adSettings.ServiceAccountPassword!);
 
             var filter = $"(sAMAccountName={EscapeLdapFilter(username)})";
             var searchResults = connection.SearchAsync(
@@ -185,7 +185,7 @@ public class UserSearchService : IUserSearchService
 
             await connection.ConnectAsync(_adSettings.Host, _adSettings.Port);
             var bindDn = $"{_adSettings.Domain}\\{_adSettings.ServiceAccountUsername}";
-            await connection.BindAsync(bindDn, _adSettings.ServiceAccountPassword);
+            await connection.BindAsync(bindDn, _adSettings.ServiceAccountPassword!);
 
             var escapedTerm = EscapeLdapFilter(term);
             var filter = $"(&(objectClass=user)(|(displayName=*{escapedTerm}*)(sAMAccountName=*{escapedTerm}*)(mail=*{escapedTerm}*)))";

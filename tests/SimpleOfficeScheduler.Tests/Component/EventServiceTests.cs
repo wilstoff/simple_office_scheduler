@@ -98,7 +98,8 @@ public class EventServiceTests : IDisposable
         return user;
     }
 
-    private Event MakeSingleEvent(int ownerUserId, string title = "Test Event", int capacity = 5)
+    private Event MakeSingleEvent(int ownerUserId, string title = "Test Event", int capacity = 5,
+        EventType eventType = EventType.OfficeHours)
     {
         return new Event
         {
@@ -107,7 +108,8 @@ public class EventServiceTests : IDisposable
             EndTime = new LocalDateTime(2026, 3, 10, 10, 0),
             Capacity = capacity,
             TimeZoneId = "America/Chicago",
-            OwnerUserId = ownerUserId
+            OwnerUserId = ownerUserId,
+            EventType = eventType
         };
     }
 
@@ -1040,5 +1042,555 @@ public class EventServiceTests : IDisposable
 
         Assert.False(success);
         Assert.Contains("message", error!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // ── TechMeeting: EventType & Model Tests ────────────────────────
+
+    [Fact]
+    public async Task CreateEvent_DefaultType_IsOfficeHours()
+    {
+        var owner = await SeedOwnerAsync();
+        var evt = MakeSingleEvent(owner.Id);
+
+        var result = await _sut.CreateEventAsync(evt, owner.Id);
+
+        var saved = await _db.Events.FindAsync(result.Id);
+        Assert.Equal(EventType.OfficeHours, saved!.EventType);
+    }
+
+    [Fact]
+    public async Task CreateEvent_WithTechMeetingType_SetsEventType()
+    {
+        var owner = await SeedOwnerAsync();
+        var evt = MakeSingleEvent(owner.Id, eventType: EventType.TechMeeting);
+
+        var result = await _sut.CreateEventAsync(evt, owner.Id);
+
+        var saved = await _db.Events.FindAsync(result.Id);
+        Assert.Equal(EventType.TechMeeting, saved!.EventType);
+    }
+
+    [Fact]
+    public async Task OccurrenceContributor_PersistsToDatabase()
+    {
+        var owner = await SeedOwnerAsync();
+        var contributor = await SeedUserAsync("contributor1");
+        var evt = await _sut.CreateEventAsync(
+            MakeSingleEvent(owner.Id, eventType: EventType.TechMeeting), owner.Id);
+        var occurrence = await _db.EventOccurrences.FirstAsync(o => o.EventId == evt.Id);
+
+        _db.Set<OccurrenceContributor>().Add(new OccurrenceContributor
+        {
+            EventOccurrenceId = occurrence.Id,
+            UserId = contributor.Id
+        });
+        await _db.SaveChangesAsync();
+
+        var saved = await _db.Set<OccurrenceContributor>()
+            .Include(c => c.User)
+            .FirstOrDefaultAsync(c => c.EventOccurrenceId == occurrence.Id);
+        Assert.NotNull(saved);
+        Assert.Equal(contributor.Id, saved!.UserId);
+        Assert.Equal("User contributor1", saved.User.DisplayName);
+    }
+
+    [Fact]
+    public async Task EventOccurrence_DisplayName_PrefixAndSuffix()
+    {
+        var owner = await SeedOwnerAsync();
+        var evt = await _sut.CreateEventAsync(
+            MakeSingleEvent(owner.Id, title: "Tech Meeting", eventType: EventType.TechMeeting), owner.Id);
+        var occurrence = await _db.EventOccurrences
+            .Include(o => o.Event)
+            .FirstAsync(o => o.EventId == evt.Id);
+
+        // Default: uses Event.Title when no prefix set
+        Assert.Equal("Tech Meeting", occurrence.DisplayName);
+
+        // With prefix only
+        occurrence.NamePrefix = "Sprint Review";
+        Assert.Equal("Sprint Review", occurrence.DisplayName);
+
+        // With prefix and suffix
+        occurrence.NameSuffix = "API Refactoring";
+        Assert.Equal("Sprint Review: API Refactoring", occurrence.DisplayName);
+
+        // With suffix but no prefix (falls back to Event.Title)
+        occurrence.NamePrefix = null;
+        Assert.Equal("Tech Meeting: API Refactoring", occurrence.DisplayName);
+    }
+
+    // ── TechMeeting: SetContributorsAsync ───────────────────────────
+
+    [Fact]
+    public async Task SetContributors_AsOwner_AssignsContributors()
+    {
+        var owner = await SeedOwnerAsync();
+        var contributor = await SeedUserAsync("contributor1");
+        var evt = await _sut.CreateEventAsync(
+            MakeSingleEvent(owner.Id, eventType: EventType.TechMeeting), owner.Id);
+        var occurrenceId = (await _db.EventOccurrences.FirstAsync(o => o.EventId == evt.Id)).Id;
+
+        var (success, error) = await _sut.SetContributorsAsync(occurrenceId, owner.Id, new List<int> { contributor.Id });
+
+        Assert.True(success);
+        Assert.Null(error);
+        var contributors = await _db.OccurrenceContributors
+            .Where(c => c.EventOccurrenceId == occurrenceId)
+            .ToListAsync();
+        Assert.Single(contributors);
+        Assert.Equal(contributor.Id, contributors[0].UserId);
+    }
+
+    [Fact]
+    public async Task SetContributors_AsNonOwner_Fails()
+    {
+        var owner = await SeedOwnerAsync();
+        var nonOwner = await SeedUserAsync("nonowner");
+        var contributor = await SeedUserAsync("contributor1");
+        var evt = await _sut.CreateEventAsync(
+            MakeSingleEvent(owner.Id, eventType: EventType.TechMeeting), owner.Id);
+        var occurrenceId = (await _db.EventOccurrences.FirstAsync(o => o.EventId == evt.Id)).Id;
+
+        var (success, error) = await _sut.SetContributorsAsync(occurrenceId, nonOwner.Id, new List<int> { contributor.Id });
+
+        Assert.False(success);
+        Assert.Contains("owner", error!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task SetContributors_OnOfficeHoursEvent_Fails()
+    {
+        var owner = await SeedOwnerAsync();
+        var contributor = await SeedUserAsync("contributor1");
+        var evt = await _sut.CreateEventAsync(
+            MakeSingleEvent(owner.Id, eventType: EventType.OfficeHours), owner.Id);
+        var occurrenceId = (await _db.EventOccurrences.FirstAsync(o => o.EventId == evt.Id)).Id;
+
+        var (success, error) = await _sut.SetContributorsAsync(occurrenceId, owner.Id, new List<int> { contributor.Id });
+
+        Assert.False(success);
+        Assert.Contains("tech meeting", error!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task SetContributors_OnLightningTalks_Fails()
+    {
+        var owner = await SeedOwnerAsync();
+        var contributor = await SeedUserAsync("contributor1");
+        var evt = await _sut.CreateEventAsync(
+            MakeSingleEvent(owner.Id, eventType: EventType.TechMeeting), owner.Id);
+        var occurrence = await _db.EventOccurrences.FirstAsync(o => o.EventId == evt.Id);
+        occurrence.IsLightningTalks = true;
+        await _db.SaveChangesAsync();
+
+        var (success, error) = await _sut.SetContributorsAsync(occurrence.Id, owner.Id, new List<int> { contributor.Id });
+
+        Assert.False(success);
+        Assert.Contains("lightning", error!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task SetContributors_CreatesTeamsMeeting()
+    {
+        var owner = await SeedOwnerAsync();
+        var contributor = await SeedUserAsync("contributor1");
+        _calendarMock
+            .Setup(c => c.CreateMeetingForContributorsAsync(
+                It.IsAny<EventOccurrence>(), It.IsAny<AppUser>(), It.IsAny<IReadOnlyList<AppUser>>()))
+            .ReturnsAsync("graph-contrib-id");
+
+        var evt = await _sut.CreateEventAsync(
+            MakeSingleEvent(owner.Id, eventType: EventType.TechMeeting), owner.Id);
+        var occurrenceId = (await _db.EventOccurrences.FirstAsync(o => o.EventId == evt.Id)).Id;
+
+        await _sut.SetContributorsAsync(occurrenceId, owner.Id, new List<int> { contributor.Id });
+
+        _calendarMock.Verify(c => c.CreateMeetingForContributorsAsync(
+            It.Is<EventOccurrence>(o => o.Id == occurrenceId),
+            It.Is<AppUser>(u => u.Id == owner.Id),
+            It.Is<IReadOnlyList<AppUser>>(users => users.Count == 1 && users[0].Id == contributor.Id)),
+            Times.Once);
+
+        var occurrence = await _db.EventOccurrences.FindAsync(occurrenceId);
+        Assert.Equal("graph-contrib-id", occurrence!.GraphEventId);
+    }
+
+    [Fact]
+    public async Task SetContributors_RemoveAll_CancelsMeeting()
+    {
+        var owner = await SeedOwnerAsync();
+        var contributor = await SeedUserAsync("contributor1");
+        _calendarMock
+            .Setup(c => c.CreateMeetingForContributorsAsync(
+                It.IsAny<EventOccurrence>(), It.IsAny<AppUser>(), It.IsAny<IReadOnlyList<AppUser>>()))
+            .ReturnsAsync("graph-contrib-id");
+
+        var evt = await _sut.CreateEventAsync(
+            MakeSingleEvent(owner.Id, eventType: EventType.TechMeeting), owner.Id);
+        var occurrenceId = (await _db.EventOccurrences.FirstAsync(o => o.EventId == evt.Id)).Id;
+
+        // First assign a contributor
+        await _sut.SetContributorsAsync(occurrenceId, owner.Id, new List<int> { contributor.Id });
+
+        // Now remove all contributors
+        await _sut.SetContributorsAsync(occurrenceId, owner.Id, new List<int>());
+
+        _calendarMock.Verify(c => c.CancelMeetingAsync(
+            "graph-contrib-id",
+            It.Is<AppUser>(u => u.Id == owner.Id)),
+            Times.Once);
+
+        var occurrence = await _db.EventOccurrences.FindAsync(occurrenceId);
+        Assert.Null(occurrence!.GraphEventId);
+        Assert.Empty(await _db.OccurrenceContributors.Where(c => c.EventOccurrenceId == occurrenceId).ToListAsync());
+    }
+
+    // ── TechMeeting: ToggleLightningTalksAsync ──────────────────────
+
+    [Fact]
+    public async Task ToggleLightningTalks_AsOwner_RemovesContributors()
+    {
+        var owner = await SeedOwnerAsync();
+        var contributor = await SeedUserAsync("contributor1");
+        _calendarMock
+            .Setup(c => c.CreateMeetingForContributorsAsync(
+                It.IsAny<EventOccurrence>(), It.IsAny<AppUser>(), It.IsAny<IReadOnlyList<AppUser>>()))
+            .ReturnsAsync("graph-contrib-id");
+
+        var evt = await _sut.CreateEventAsync(
+            MakeSingleEvent(owner.Id, eventType: EventType.TechMeeting), owner.Id);
+        var occurrenceId = (await _db.EventOccurrences.FirstAsync(o => o.EventId == evt.Id)).Id;
+
+        // Assign contributor first
+        await _sut.SetContributorsAsync(occurrenceId, owner.Id, new List<int> { contributor.Id });
+
+        // Toggle to lightning talks
+        var (success, error) = await _sut.ToggleLightningTalksAsync(occurrenceId, owner.Id, true);
+
+        Assert.True(success);
+        Assert.Null(error);
+
+        var occurrence = await _db.EventOccurrences.FindAsync(occurrenceId);
+        Assert.True(occurrence!.IsLightningTalks);
+
+        // Contributors should be removed
+        Assert.Empty(await _db.OccurrenceContributors.Where(c => c.EventOccurrenceId == occurrenceId).ToListAsync());
+
+        // Meeting should be cancelled
+        _calendarMock.Verify(c => c.CancelMeetingAsync("graph-contrib-id", It.Is<AppUser>(u => u.Id == owner.Id)), Times.Once);
+        Assert.Null(occurrence.GraphEventId);
+    }
+
+    [Fact]
+    public async Task ToggleLightningTalks_Off_RemovesSignups()
+    {
+        var owner = await SeedOwnerAsync();
+        var user = await SeedUserAsync();
+        var evt = await _sut.CreateEventAsync(
+            MakeSingleEvent(owner.Id, eventType: EventType.TechMeeting), owner.Id);
+        var occurrence = await _db.EventOccurrences.FirstAsync(o => o.EventId == evt.Id);
+
+        // Set to lightning talks first
+        occurrence.IsLightningTalks = true;
+        await _db.SaveChangesAsync();
+
+        // Add a signup (simulating lightning talks signup)
+        _db.EventSignups.Add(new EventSignup
+        {
+            EventOccurrenceId = occurrence.Id,
+            UserId = user.Id,
+            SignedUpAt = _clock.GetCurrentInstant(),
+            Message = "My topic"
+        });
+        await _db.SaveChangesAsync();
+
+        // Toggle off lightning talks
+        var (success, error) = await _sut.ToggleLightningTalksAsync(occurrence.Id, owner.Id, false);
+
+        Assert.True(success);
+        Assert.Null(error);
+
+        var updated = await _db.EventOccurrences.FindAsync(occurrence.Id);
+        Assert.False(updated!.IsLightningTalks);
+
+        // Signups should be removed
+        Assert.Empty(await _db.EventSignups.Where(s => s.EventOccurrenceId == occurrence.Id).ToListAsync());
+    }
+
+    [Fact]
+    public async Task ToggleLightningTalks_OnNonTechMeeting_Fails()
+    {
+        var owner = await SeedOwnerAsync();
+        var evt = await _sut.CreateEventAsync(
+            MakeSingleEvent(owner.Id, eventType: EventType.OfficeHours), owner.Id);
+        var occurrenceId = (await _db.EventOccurrences.FirstAsync(o => o.EventId == evt.Id)).Id;
+
+        var (success, error) = await _sut.ToggleLightningTalksAsync(occurrenceId, owner.Id, true);
+
+        Assert.False(success);
+        Assert.Contains("tech meeting", error!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ToggleLightningTalks_On_CancelsMeeting()
+    {
+        var owner = await SeedOwnerAsync();
+        var contributor = await SeedUserAsync("contributor1");
+        _calendarMock
+            .Setup(c => c.CreateMeetingForContributorsAsync(
+                It.IsAny<EventOccurrence>(), It.IsAny<AppUser>(), It.IsAny<IReadOnlyList<AppUser>>()))
+            .ReturnsAsync("graph-meeting-id");
+
+        var evt = await _sut.CreateEventAsync(
+            MakeSingleEvent(owner.Id, eventType: EventType.TechMeeting), owner.Id);
+        var occurrenceId = (await _db.EventOccurrences.FirstAsync(o => o.EventId == evt.Id)).Id;
+
+        await _sut.SetContributorsAsync(occurrenceId, owner.Id, new List<int> { contributor.Id });
+
+        await _sut.ToggleLightningTalksAsync(occurrenceId, owner.Id, true);
+
+        _calendarMock.Verify(c => c.CancelMeetingAsync("graph-meeting-id", It.Is<AppUser>(u => u.Id == owner.Id)), Times.Once);
+    }
+
+    // ── TechMeeting: SignUp Guard ───────────────────────────────────
+
+    [Fact]
+    public async Task SignUp_OnRegularTechMeeting_Fails()
+    {
+        var owner = await SeedOwnerAsync();
+        var user = await SeedUserAsync();
+        var evt = await _sut.CreateEventAsync(
+            MakeSingleEvent(owner.Id, eventType: EventType.TechMeeting), owner.Id);
+        var occurrenceId = (await _db.EventOccurrences.FirstAsync(o => o.EventId == evt.Id)).Id;
+
+        var (success, error) = await _sut.SignUpAsync(occurrenceId, user.Id, "My topic");
+
+        Assert.False(success);
+        Assert.Contains("contributor", error!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task SignUp_OnLightningTalks_Succeeds()
+    {
+        var owner = await SeedOwnerAsync();
+        var user = await SeedUserAsync();
+        var evt = await _sut.CreateEventAsync(
+            MakeSingleEvent(owner.Id, eventType: EventType.TechMeeting), owner.Id);
+        var occurrence = await _db.EventOccurrences.FirstAsync(o => o.EventId == evt.Id);
+        occurrence.IsLightningTalks = true;
+        await _db.SaveChangesAsync();
+
+        var (success, error) = await _sut.SignUpAsync(occurrence.Id, user.Id, "Lightning topic");
+
+        Assert.True(success);
+        Assert.Null(error);
+    }
+
+    // ── TechMeeting: UpdateOccurrenceNameAsync ──────────────────────
+
+    [Fact]
+    public async Task UpdateOccurrenceName_OwnerCanEditPrefix()
+    {
+        var owner = await SeedOwnerAsync();
+        var evt = await _sut.CreateEventAsync(
+            MakeSingleEvent(owner.Id, eventType: EventType.TechMeeting), owner.Id);
+        var occurrenceId = (await _db.EventOccurrences.FirstAsync(o => o.EventId == evt.Id)).Id;
+
+        var (success, error) = await _sut.UpdateOccurrenceNameAsync(occurrenceId, owner.Id, "Sprint Review", null);
+
+        Assert.True(success);
+        Assert.Null(error);
+        var occurrence = await _db.EventOccurrences.FindAsync(occurrenceId);
+        Assert.Equal("Sprint Review", occurrence!.NamePrefix);
+    }
+
+    [Fact]
+    public async Task UpdateOccurrenceName_ContributorCanEditSuffix()
+    {
+        var owner = await SeedOwnerAsync();
+        var contributor = await SeedUserAsync("contributor1");
+        _calendarMock
+            .Setup(c => c.CreateMeetingForContributorsAsync(
+                It.IsAny<EventOccurrence>(), It.IsAny<AppUser>(), It.IsAny<IReadOnlyList<AppUser>>()))
+            .ReturnsAsync("graph-id");
+
+        var evt = await _sut.CreateEventAsync(
+            MakeSingleEvent(owner.Id, eventType: EventType.TechMeeting), owner.Id);
+        var occurrenceId = (await _db.EventOccurrences.FirstAsync(o => o.EventId == evt.Id)).Id;
+
+        // Assign contributor
+        await _sut.SetContributorsAsync(occurrenceId, owner.Id, new List<int> { contributor.Id });
+
+        // Contributor edits suffix
+        var (success, error) = await _sut.UpdateOccurrenceNameAsync(occurrenceId, contributor.Id, null, "API Design");
+
+        Assert.True(success);
+        Assert.Null(error);
+        var occurrence = await _db.EventOccurrences.FindAsync(occurrenceId);
+        Assert.Equal("API Design", occurrence!.NameSuffix);
+    }
+
+    [Fact]
+    public async Task UpdateOccurrenceName_NonContributorCannotEditSuffix()
+    {
+        var owner = await SeedOwnerAsync();
+        var nonContributor = await SeedUserAsync("outsider");
+        var evt = await _sut.CreateEventAsync(
+            MakeSingleEvent(owner.Id, eventType: EventType.TechMeeting), owner.Id);
+        var occurrenceId = (await _db.EventOccurrences.FirstAsync(o => o.EventId == evt.Id)).Id;
+
+        var (success, error) = await _sut.UpdateOccurrenceNameAsync(occurrenceId, nonContributor.Id, null, "Sneaky Edit");
+
+        Assert.False(success);
+        Assert.Contains("owner", error!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // ── TechMeeting: Reminders ──────────────────────────────────────
+
+    [Fact]
+    public async Task SetReminderDefinitions_AsOwner_CreatesReminders()
+    {
+        var owner = await SeedOwnerAsync();
+        var evt = await _sut.CreateEventAsync(
+            MakeSingleEvent(owner.Id, eventType: EventType.TechMeeting), owner.Id);
+
+        var (success, error) = await _sut.SetReminderDefinitionsAsync(
+            evt.Id, owner.Id, new List<string> { "Recording Extension", "In Sharepoint" });
+
+        Assert.True(success);
+        Assert.Null(error);
+        var defs = await _db.Set<EventReminderDefinition>()
+            .Where(d => d.EventId == evt.Id)
+            .OrderBy(d => d.DisplayOrder)
+            .ToListAsync();
+        Assert.Equal(2, defs.Count);
+        Assert.Equal("Recording Extension", defs[0].Name);
+        Assert.Equal("In Sharepoint", defs[1].Name);
+    }
+
+    [Fact]
+    public async Task SetReminderDefinitions_AsNonOwner_Fails()
+    {
+        var owner = await SeedOwnerAsync();
+        var nonOwner = await SeedUserAsync("nonowner");
+        var evt = await _sut.CreateEventAsync(
+            MakeSingleEvent(owner.Id, eventType: EventType.TechMeeting), owner.Id);
+
+        var (success, error) = await _sut.SetReminderDefinitionsAsync(
+            evt.Id, nonOwner.Id, new List<string> { "Test" });
+
+        Assert.False(success);
+        Assert.Contains("owner", error!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task SetReminderDefinitions_OnOfficeHours_Fails()
+    {
+        var owner = await SeedOwnerAsync();
+        var evt = await _sut.CreateEventAsync(
+            MakeSingleEvent(owner.Id, eventType: EventType.OfficeHours), owner.Id);
+
+        var (success, error) = await _sut.SetReminderDefinitionsAsync(
+            evt.Id, owner.Id, new List<string> { "Test" });
+
+        Assert.False(success);
+        Assert.Contains("tech meeting", error!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task SetReminderDefinitions_Over10_Fails()
+    {
+        var owner = await SeedOwnerAsync();
+        var evt = await _sut.CreateEventAsync(
+            MakeSingleEvent(owner.Id, eventType: EventType.TechMeeting), owner.Id);
+
+        var names = Enumerable.Range(1, 11).Select(i => $"Reminder {i}").ToList();
+        var (success, error) = await _sut.SetReminderDefinitionsAsync(evt.Id, owner.Id, names);
+
+        Assert.False(success);
+        Assert.Contains("10", error!);
+    }
+
+    [Fact]
+    public async Task SetReminderDefinitions_RemovesDeleted_PreservesExisting()
+    {
+        var owner = await SeedOwnerAsync();
+        var evt = await _sut.CreateEventAsync(
+            MakeSingleEvent(owner.Id, eventType: EventType.TechMeeting), owner.Id);
+
+        // Create initial reminders
+        await _sut.SetReminderDefinitionsAsync(evt.Id, owner.Id, new List<string> { "A", "B", "C" });
+
+        // Update: keep B, add D, remove A and C
+        var (success, _) = await _sut.SetReminderDefinitionsAsync(evt.Id, owner.Id, new List<string> { "B", "D" });
+
+        Assert.True(success);
+        var defs = await _db.Set<EventReminderDefinition>()
+            .Where(d => d.EventId == evt.Id)
+            .OrderBy(d => d.DisplayOrder)
+            .ToListAsync();
+        Assert.Equal(2, defs.Count);
+        Assert.Equal("B", defs[0].Name);
+        Assert.Equal("D", defs[1].Name);
+    }
+
+    [Fact]
+    public async Task SetReminderValue_AsOwner_SetsValue()
+    {
+        var owner = await SeedOwnerAsync();
+        var evt = await _sut.CreateEventAsync(
+            MakeSingleEvent(owner.Id, eventType: EventType.TechMeeting), owner.Id);
+        var occurrenceId = (await _db.EventOccurrences.FirstAsync(o => o.EventId == evt.Id)).Id;
+
+        await _sut.SetReminderDefinitionsAsync(evt.Id, owner.Id, new List<string> { "Recording" });
+        var def = await _db.Set<EventReminderDefinition>().FirstAsync(d => d.EventId == evt.Id);
+
+        var (success, error) = await _sut.SetReminderValueAsync(occurrenceId, owner.Id, def.Id, true);
+
+        Assert.True(success);
+        Assert.Null(error);
+        var value = await _db.Set<OccurrenceReminderValue>()
+            .FirstOrDefaultAsync(v => v.EventOccurrenceId == occurrenceId && v.ReminderDefinitionId == def.Id);
+        Assert.NotNull(value);
+        Assert.True(value!.Value);
+    }
+
+    [Fact]
+    public async Task SetReminderValue_AsNonOwner_Fails()
+    {
+        var owner = await SeedOwnerAsync();
+        var nonOwner = await SeedUserAsync("nonowner");
+        var evt = await _sut.CreateEventAsync(
+            MakeSingleEvent(owner.Id, eventType: EventType.TechMeeting), owner.Id);
+        var occurrenceId = (await _db.EventOccurrences.FirstAsync(o => o.EventId == evt.Id)).Id;
+
+        await _sut.SetReminderDefinitionsAsync(evt.Id, owner.Id, new List<string> { "Recording" });
+        var def = await _db.Set<EventReminderDefinition>().FirstAsync(d => d.EventId == evt.Id);
+
+        var (success, error) = await _sut.SetReminderValueAsync(occurrenceId, nonOwner.Id, def.Id, true);
+
+        Assert.False(success);
+        Assert.Contains("owner", error!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task SetReminderValue_ToggleOff_UpdatesExisting()
+    {
+        var owner = await SeedOwnerAsync();
+        var evt = await _sut.CreateEventAsync(
+            MakeSingleEvent(owner.Id, eventType: EventType.TechMeeting), owner.Id);
+        var occurrenceId = (await _db.EventOccurrences.FirstAsync(o => o.EventId == evt.Id)).Id;
+
+        await _sut.SetReminderDefinitionsAsync(evt.Id, owner.Id, new List<string> { "Recording" });
+        var def = await _db.Set<EventReminderDefinition>().FirstAsync(d => d.EventId == evt.Id);
+
+        // Set to true then false
+        await _sut.SetReminderValueAsync(occurrenceId, owner.Id, def.Id, true);
+        await _sut.SetReminderValueAsync(occurrenceId, owner.Id, def.Id, false);
+
+        var value = await _db.Set<OccurrenceReminderValue>()
+            .FirstAsync(v => v.EventOccurrenceId == occurrenceId && v.ReminderDefinitionId == def.Id);
+        Assert.False(value.Value);
     }
 }

@@ -25,6 +25,15 @@
     <div class="alert alert-success">@_successMessage</div>
 }
 
+@if (_model is null)
+{
+    <div class="d-flex align-items-center gap-2 py-4">
+        <span class="spinner-border spinner-border-sm text-primary"></span>
+        <span class="text-muted">Loading...</span>
+    </div>
+    return;
+}
+
 <EditForm Model="_model" OnValidSubmit="HandleSubmit" FormName="eventForm">
     <DataAnnotationsValidator />
     <ValidationSummary />
@@ -35,6 +44,18 @@
                 <label for="title" class="form-label">Title</label>
                 <InputText id="title" class="form-control" @bind-Value="_model.Title" />
                 <ValidationMessage For="() => _model.Title" />
+            </div>
+
+            <div class="mb-3">
+                <label for="eventType" class="form-label">Event Type</label>
+                <InputSelect id="eventType" class="form-select" @bind-Value="_model.EventType" disabled="@_isEditMode">
+                    <option value="@EventType.OfficeHours">Office Hours</option>
+                    <option value="@EventType.TechMeeting">Tech Meeting</option>
+                </InputSelect>
+                @if (_model.EventType == EventType.TechMeeting)
+                {
+                    <small class="form-text text-muted">Capacity applies to lightning talks sessions only.</small>
+                }
             </div>
 
             <div class="mb-3">
@@ -165,7 +186,7 @@
     private void ToggleAllTimeZones()
     {
         _showAllTimeZones = !_showAllTimeZones;
-        var currentId = _model.TimeZoneId;
+        var currentId = _model!.TimeZoneId;
         _timeZones = _showAllTimeZones
             ? TimeZoneHelper.GetAllTimeZones()
             : TimeZoneHelper.GetCommonTimeZones();
@@ -204,6 +225,7 @@
             _model.EndTime = evt.EndTime.ToDateTimeUnspecified();
             _model.Capacity = evt.Capacity;
             _model.TimeZoneId = evt.TimeZoneId;
+            _model.EventType = evt.EventType;
             _model.IsRecurring = evt.Recurrence is not null;
             _model.RecurrenceType = evt.Recurrence?.Type ?? RecurrenceType.Weekly;
             _model.Interval = evt.Recurrence?.Interval ?? 1;
@@ -249,10 +271,10 @@
 
     private void ToggleDay(DayOfWeek day, bool isChecked)
     {
-        if (isChecked && !_model.DaysOfWeek.Contains(day))
-            _model.DaysOfWeek.Add(day);
+        if (isChecked && !_model!.DaysOfWeek.Contains(day))
+            _model!.DaysOfWeek.Add(day);
         else if (!isChecked)
-            _model.DaysOfWeek.Remove(day);
+            _model!.DaysOfWeek.Remove(day);
     }
 
     private async Task HandleSubmit()
@@ -270,7 +292,7 @@
             return;
         }
 
-        if (_model.EndTime <= _model.StartTime)
+        if (_model!.EndTime <= _model.StartTime)
         {
             _errorMessage = "End time must be after start time.";
             _isSubmitting = false;
@@ -284,7 +306,8 @@
             StartTime = LocalDateTime.FromDateTime(_model.StartTime),
             EndTime = LocalDateTime.FromDateTime(_model.EndTime),
             Capacity = _model.Capacity,
-            TimeZoneId = _model.TimeZoneId
+            TimeZoneId = _model.TimeZoneId,
+            EventType = _model.EventType
         };
 
         if (_model.IsRecurring)
@@ -338,6 +361,7 @@
         public DateTime EndTime { get; set; }
         public int Capacity { get; set; } = 1;
         public string TimeZoneId { get; set; } = string.Empty;
+        public EventType EventType { get; set; } = EventType.OfficeHours;
         public bool IsRecurring { get; set; }
         public RecurrenceType RecurrenceType { get; set; } = RecurrenceType.Weekly;
         public int Interval { get; set; } = 1;

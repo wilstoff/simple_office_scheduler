@@ -15,6 +15,7 @@ public class Event
     public int DurationMinutes { get; set; }
     public int Capacity { get; set; } = 1;
     public string TimeZoneId { get; set; } = "America/New_York";
+    public EventType EventType { get; set; } = EventType.OfficeHours;
 
     public RecurrencePattern? Recurrence { get; set; }
 
@@ -22,4 +23,5 @@ public class Event
     public Instant UpdatedAt { get; set; }
 
     public ICollection<EventOccurrence> Occurrences { get; set; } = new List<EventOccurrence>();
+    public ICollection<EventReminderDefinition> ReminderDefinitions { get; set; } = new List<EventReminderDefinition>();
 }

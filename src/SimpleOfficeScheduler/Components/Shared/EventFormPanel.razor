@@ -31,6 +31,18 @@
             </div>
 
             <div class="mb-3">
+                <label class="form-label">Event Type</label>
+                <InputSelect class="form-select" @bind-Value="_model.EventType" disabled="@EventId.HasValue">
+                    <option value="@EventType.OfficeHours">Office Hours</option>
+                    <option value="@EventType.TechMeeting">Tech Meeting</option>
+                </InputSelect>
+                @if (_model.EventType == EventType.TechMeeting)
+                {
+                    <small class="text-muted">Capacity applies to lightning talks sessions only.</small>
+                }
+            </div>
+
+            <div class="mb-3">
                 <label class="form-label">Description</label>
                 <InputTextArea class="form-control" rows="2" @bind-Value="_model.Description" placeholder="Optional description" />
             </div>
@@ -191,6 +203,7 @@
                         EndTime = evt.EndTime.ToDateTimeUnspecified(),
                         Capacity = evt.Capacity,
                         TimeZoneId = evt.TimeZoneId,
+                        EventType = evt.EventType,
                         IsRecurring = evt.Recurrence is not null,
                         RecurrenceType = evt.Recurrence?.Type ?? RecurrenceType.Weekly,
                         Interval = evt.Recurrence?.Interval ?? 1,
@@ -290,7 +303,8 @@
             StartTime = LocalDateTime.FromDateTime(_model.StartTime),
             EndTime = LocalDateTime.FromDateTime(_model.EndTime),
             Capacity = _model.Capacity,
-            TimeZoneId = _model.TimeZoneId
+            TimeZoneId = _model.TimeZoneId,
+            EventType = _model.EventType
         };
 
         if (_model.IsRecurring)
@@ -350,6 +364,7 @@
         public DateTime EndTime { get; set; }
         public int Capacity { get; set; } = 1;
         public string TimeZoneId { get; set; } = string.Empty;
+        public EventType EventType { get; set; } = EventType.OfficeHours;
         public bool IsRecurring { get; set; }
         public RecurrenceType RecurrenceType { get; set; } = RecurrenceType.Weekly;
         public int Interval { get; set; } = 1;

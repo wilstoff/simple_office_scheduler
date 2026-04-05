@@ -1,5 +1,6 @@
 @using NodaTime
 @inject IEventService EventService
+@inject IUserSearchService UserSearchService
 @inject AuthenticationStateProvider AuthStateProvider
 @inject NavigationManager Navigation
 @rendermode InteractiveServer
@@ -11,7 +12,13 @@
     @if (_event is not null)
     {
         <div class="side-panel-header">
-            <h5>@_event.Title</h5>
+            <h5>
+                @_event.Title
+                @if (_isTechMeeting)
+                {
+                    <span class="badge bg-success ms-2" style="font-size: 0.6em; vertical-align: middle;">Tech Meeting</span>
+                }
+            </h5>
             <button class="btn-panel-close" @onclick="Close">&times;</button>
         </div>
         <div class="side-panel-body">
@@ -38,10 +45,13 @@
                     <span style="color: var(--text-muted);">Timezone</span>
                     <span>@_event.TimeZoneId</span>
                 </div>
-                <div class="d-flex justify-content-between mb-1">
-                    <span style="color: var(--text-muted);">Capacity</span>
-                    <span>@_event.Capacity per session</span>
-                </div>
+                @if (!_isTechMeeting || _isLightningTalks)
+                {
+                    <div class="d-flex justify-content-between mb-1">
+                        <span style="color: var(--text-muted);">Capacity</span>
+                        <span>@_effectiveCapacity per session</span>
+                    </div>
+                }
                 @if (_event.Recurrence is not null)
                 {
                     <div class="d-flex justify-content-between mb-1">
@@ -61,10 +71,17 @@
                             {
                                 <span class="badge" style="background-color: var(--accent-danger);">Cancelled</span>
                             }
-                            else
+                            else if (_isTechMeeting && !_isLightningTalks)
                             {
                                 <span class="badge" style="background-color: var(--accent-success);">
-                                    @_selectedOccurrence.Signups.Count / @_event.Capacity signed up
+                                    @_selectedOccurrence.Contributors.Count contributor@(_selectedOccurrence.Contributors.Count != 1 ? "s" : "")
+                                </span>
+                            }
+                            else
+                            {
+                                var cap = _effectiveCapacity;
+                                <span class="badge" style="background-color: var(--accent-success);">
+                                    @_selectedOccurrence.Signups.Count / @cap signed up
                                 </span>
                             }
                         </div>
@@ -72,30 +89,125 @@
                             @_selectedOccurrence.StartTime.ToString("ddd, MMM dd h:mm tt", null)
                         </div>
 
+                        @* Topic display for regular tech meetings *@
+                        @if (_isTechMeeting && !_isLightningTalks && !_selectedOccurrence.IsCancelled)
+                        {
+                            @if (!string.IsNullOrEmpty(_selectedOccurrence.NameSuffix))
+                            {
+                                <div class="mt-1" style="color: var(--text-secondary); font-style: italic;">
+                                    "@_selectedOccurrence.DisplayName"
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="mt-1" style="color: var(--text-muted); font-size: 0.85rem;">No topic set</div>
+                            }
+                        }
+
                         @if (!_selectedOccurrence.IsCancelled)
                         {
                             <div class="mt-2">
-                                @if (_isSignedUp)
+                                @* Lightning talks toggle (owner only, tech meetings only) *@
+                                @if (_isTechMeeting && _isOwner)
                                 {
-                                    <button class="btn btn-sm btn-outline-primary" @onclick="CancelSignup" disabled="@_actionInProgress">
-                                        Cancel Signup
+                                    <button class="btn btn-sm @(_isLightningTalks ? "btn-info" : "btn-outline-info") me-1"
+                                            data-testid="sidebar-lightning-toggle"
+                                            @onclick="ToggleLightningTalks">
+                                        @(_isLightningTalks ? "⚡ Talks On" : "⚡ Talks Off")
                                     </button>
-                                }
-                                else if (_selectedOccurrence.Signups.Count < _event.Capacity)
-                                {
-                                    <div class="mb-2">
-                                        <input type="text" class="form-control form-control-sm" placeholder="Topic to discuss (required)"
-                                               @bind="_signupMessage" @bind:event="oninput" />
-                                    </div>
-                                    <button class="btn btn-sm btn-primary" @onclick="SignUp"
-                                            disabled="@(_actionInProgress || string.IsNullOrWhiteSpace(_signupMessage))">
-                                        Sign Up
-                                    </button>
+
+                                    @if (_isLightningTalks)
+                                    {
+                                        <div class="d-inline-flex align-items-center gap-1 ms-1">
+                                            <label class="form-label mb-0 small">Slots:</label>
+                                            <input type="number" class="form-control form-control-sm" style="width:70px;"
+                                                   min="1"
+                                                   value="@_effectiveCapacity"
+                                                   @onchange="UpdateLightningTalksCapacity" />
+                                        </div>
+                                    }
                                 }
 
-                                @if (_isOwner && !_selectedOccurrence.IsCancelled)
+                                @if (_isTechMeeting && !_isLightningTalks)
                                 {
-                                    <button class="btn btn-sm" style="color: var(--accent-danger); border-color: var(--accent-danger);"
+                                    @* Regular tech meeting: name editing + contributors, no signup *@
+
+                                    @* Name editing *@
+                                    @if (_isOwner || _isContributor)
+                                    {
+                                        <div class="mt-2">
+                                            <label class="form-label small mb-1" style="color: var(--text-muted);">Topic</label>
+                                            <div class="d-flex gap-1">
+                                                <input type="text" class="form-control form-control-sm"
+                                                       data-testid="sidebar-name-suffix"
+                                                       placeholder="Set topic..."
+                                                       @bind="_nameSuffix" @bind:event="oninput" />
+                                                <button class="btn btn-sm btn-outline-primary"
+                                                        @onclick="SaveOccurrenceName"
+                                                        disabled="@_actionInProgress">Save</button>
+                                            </div>
+                                        </div>
+                                    }
+
+                                    @* Contributor list *@
+                                    <div class="mt-2">
+                                        <label class="form-label small mb-1" style="color: var(--text-muted);">Contributors</label>
+                                        @if (_selectedOccurrence.Contributors.Any())
+                                        {
+                                            @foreach (var c in _selectedOccurrence.Contributors)
+                                            {
+                                                <div class="d-flex justify-content-between align-items-center py-1" style="border-bottom: 1px solid var(--border-color); font-size: 0.85rem;">
+                                                    <span>@c.User?.DisplayName</span>
+                                                    @if (_isOwner)
+                                                    {
+                                                        <button class="btn btn-sm btn-outline-danger py-0 px-1" style="font-size:0.7rem;"
+                                                                @onclick="() => RemoveContributor(c.UserId)">×</button>
+                                                    }
+                                                </div>
+                                            }
+                                        }
+                                        else
+                                        {
+                                            <div style="color: var(--text-muted); font-size: 0.85rem;">No contributors assigned</div>
+                                        }
+
+                                        @if (_isOwner)
+                                        {
+                                            <div class="d-flex gap-1 align-items-center mt-1" data-testid="sidebar-add-contributor">
+                                                <UserTypeahead @bind-SelectedUser="_contributorSelection"
+                                                               Placeholder="Add contributor..." />
+                                                <button class="btn btn-sm btn-outline-primary"
+                                                        disabled="@(_contributorSelection is null)"
+                                                        @onclick="AddContributor">Add</button>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                                else
+                                {
+                                    @* Office hours or lightning talks: signup UI *@
+                                    @if (_isSignedUp)
+                                    {
+                                        <button class="btn btn-sm btn-outline-primary" @onclick="CancelSignup" disabled="@_actionInProgress">
+                                            Cancel Signup
+                                        </button>
+                                    }
+                                    else if (_selectedOccurrence.Signups.Count < _effectiveCapacity)
+                                    {
+                                        <div class="mb-2">
+                                            <input type="text" class="form-control form-control-sm" placeholder="Topic to discuss (required)"
+                                                   @bind="_signupMessage" @bind:event="oninput" />
+                                        </div>
+                                        <button class="btn btn-sm btn-primary" @onclick="SignUp"
+                                                disabled="@(_actionInProgress || string.IsNullOrWhiteSpace(_signupMessage))">
+                                            Sign Up
+                                        </button>
+                                    }
+                                }
+
+                                @if (_isOwner)
+                                {
+                                    <button class="btn btn-sm ms-1" style="color: var(--accent-danger); border-color: var(--accent-danger);"
                                             @onclick="CancelOccurrence" disabled="@_actionInProgress">
                                         Cancel Session
                                     </button>
@@ -115,7 +227,8 @@
                 </div>
             }
 
-            @if (_selectedOccurrence is not null && _selectedOccurrence.Signups.Any())
+            @* Signups section — only for office hours or lightning talks *@
+            @if (_selectedOccurrence is not null && (!_isTechMeeting || _isLightningTalks) && _selectedOccurrence.Signups.Any())
             {
                 <div class="mb-3">
                     <strong style="font-size: 0.85rem; color: var(--text-muted);">Signups</strong>
@@ -168,6 +281,10 @@
     private EventOccurrence? _selectedOccurrence;
     private bool _isOwner;
     private bool _isSignedUp;
+    private bool _isTechMeeting;
+    private bool _isLightningTalks;
+    private bool _isContributor;
+    private int _effectiveCapacity;
     private int _currentUserId;
     private string? _statusMessage;
     private bool _isError;
@@ -175,6 +292,8 @@
     private int? _lastEventId;
     private int? _lastOccurrenceId;
     private string? _signupMessage;
+    private string? _nameSuffix;
+    private UserSearchResult? _contributorSelection;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -207,8 +326,8 @@
             _isOwner = _event.OwnerUserId == uid;
         }
 
-        // Show the specific clicked occurrence if we have an OccurrenceId,
-        // otherwise fall back to the next future occurrence
+        _isTechMeeting = _event.EventType == EventType.TechMeeting;
+
         if (OccurrenceId.HasValue)
         {
             _selectedOccurrence = _event.Occurrences.FirstOrDefault(o => o.Id == OccurrenceId.Value);
@@ -229,6 +348,10 @@
         if (_selectedOccurrence is not null)
         {
             _isSignedUp = _selectedOccurrence.Signups.Any(s => s.UserId == _currentUserId);
+            _isLightningTalks = _selectedOccurrence.IsLightningTalks;
+            _isContributor = _selectedOccurrence.Contributors.Any(c => c.UserId == _currentUserId);
+            _effectiveCapacity = _selectedOccurrence.LightningTalksCapacity ?? _event.Capacity;
+            _nameSuffix = _selectedOccurrence.NameSuffix ?? "";
         }
     }
 
@@ -309,6 +432,131 @@
         if (success)
         {
             _statusMessage = "Session restored.";
+            _isError = false;
+            await LoadEvent();
+            await OnEventChanged.InvokeAsync();
+        }
+        else
+        {
+            _statusMessage = error;
+            _isError = true;
+        }
+        _actionInProgress = false;
+    }
+
+    private async Task ToggleLightningTalks()
+    {
+        if (_selectedOccurrence is null) return;
+        _actionInProgress = true;
+        _statusMessage = null;
+
+        var newState = !_isLightningTalks;
+        var (success, error) = await EventService.ToggleLightningTalksAsync(_selectedOccurrence.Id, _currentUserId, newState);
+        if (success)
+        {
+            _statusMessage = newState ? "Lightning talks enabled." : "Lightning talks disabled.";
+            _isError = false;
+            await LoadEvent();
+            await OnEventChanged.InvokeAsync();
+        }
+        else
+        {
+            _statusMessage = error;
+            _isError = true;
+        }
+        _actionInProgress = false;
+    }
+
+    private async Task UpdateLightningTalksCapacity(ChangeEventArgs e)
+    {
+        if (_selectedOccurrence is null) return;
+        if (!int.TryParse(e.Value?.ToString(), out var capacity) || capacity < 1) return;
+
+        var (success, error) = await EventService.ToggleLightningTalksAsync(_selectedOccurrence.Id, _currentUserId, true, capacity);
+        if (!success)
+        {
+            _statusMessage = error;
+            _isError = true;
+        }
+        await LoadEvent();
+        await OnEventChanged.InvokeAsync();
+    }
+
+    private async Task SaveOccurrenceName()
+    {
+        if (_selectedOccurrence is null) return;
+        _actionInProgress = true;
+
+        var (success, error) = await EventService.UpdateOccurrenceNameAsync(
+            _selectedOccurrence.Id, _currentUserId, null, _nameSuffix ?? "");
+        if (success)
+        {
+            _statusMessage = "Topic saved.";
+            _isError = false;
+            await LoadEvent();
+            await OnEventChanged.InvokeAsync();
+        }
+        else
+        {
+            _statusMessage = error;
+            _isError = true;
+        }
+        _actionInProgress = false;
+    }
+
+    private async Task AddContributor()
+    {
+        if (_selectedOccurrence is null || _contributorSelection is null) return;
+        _actionInProgress = true;
+
+        var targetUserId = _contributorSelection.Id;
+        if (_contributorSelection.IsAdOnly)
+        {
+            var ensured = await UserSearchService.EnsureUserAsync(_contributorSelection.Username);
+            if (ensured is null)
+            {
+                _statusMessage = "Could not create local account for the selected AD user.";
+                _isError = true;
+                _actionInProgress = false;
+                return;
+            }
+            targetUserId = ensured.Id;
+        }
+
+        var existingIds = _selectedOccurrence.Contributors.Select(c => c.UserId).ToList();
+        existingIds.Add(targetUserId);
+
+        var (success, error) = await EventService.SetContributorsAsync(_selectedOccurrence.Id, _currentUserId, existingIds);
+        if (success)
+        {
+            _statusMessage = $"Added {_contributorSelection.DisplayName} as contributor.";
+            _isError = false;
+            _contributorSelection = null;
+            await LoadEvent();
+            await OnEventChanged.InvokeAsync();
+        }
+        else
+        {
+            _statusMessage = error;
+            _isError = true;
+        }
+        _actionInProgress = false;
+    }
+
+    private async Task RemoveContributor(int userId)
+    {
+        if (_selectedOccurrence is null) return;
+        _actionInProgress = true;
+
+        var remainingIds = _selectedOccurrence.Contributors
+            .Where(c => c.UserId != userId)
+            .Select(c => c.UserId)
+            .ToList();
+
+        var (success, error) = await EventService.SetContributorsAsync(_selectedOccurrence.Id, _currentUserId, remainingIds);
+        if (success)
+        {
+            _statusMessage = "Contributor removed.";
             _isError = false;
             await LoadEvent();
             await OnEventChanged.InvokeAsync();

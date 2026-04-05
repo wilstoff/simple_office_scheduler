@@ -90,12 +90,24 @@ function createAndRenderCalendar(
         eventContent: (arg) => {
             const props = arg.event.extendedProps;
             let detailText: string;
-            if (props['isCancelled']) {
+            let titlePrefix = '';
+            // Mirror/placeholder events (from selectMirror) have no extendedProps
+            if (!props || props['signedUp'] === undefined) {
+                detailText = 'New event';
+            } else if (props['isCancelled']) {
                 detailText = 'CANCELLED';
+            } else if (props['eventType'] === 'TechMeeting' && !props['isLightningTalks']) {
+                // Regular tech meeting: show contributors or owner
+                const contribs = props['contributors'] as string[] || [];
+                detailText = contribs.length > 0 ? contribs.join(', ') : props['owner'] || '';
+            } else if (props['eventType'] === 'TechMeeting' && props['isLightningTalks']) {
+                // Lightning talks: prepend count to title, detail shows owner
+                titlePrefix = `[${props['signedUp']}/${props['capacity']}] `;
+                detailText = props['owner'] || '';
             } else {
-                const cap = `${props['signedUp']}/${props['capacity']}`;
-                const owner = props['owner'] || '';
-                detailText = owner ? `${cap} · ${owner}` : cap;
+                // Office hours: prepend count to title, owner in detail
+                titlePrefix = `[${props['signedUp']}/${props['capacity']}] `;
+                detailText = props['owner'] || '';
             }
 
             // Show event times in monthly view
@@ -128,7 +140,7 @@ function createAndRenderCalendar(
             return {
                 html: `
                     <div title="${tooltip.replace(/"/g, '&quot;')}" style="padding: 2px 4px; overflow: hidden; height: 100%; white-space: normal; width: 100%;">
-                        <div style="font-weight: 600; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; word-break: break-word; width: 100%;">${arg.event.title}</div>
+                        <div style="font-weight: 600; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; word-break: break-word; width: 100%;">${titlePrefix}${arg.event.title}</div>
                         ${timeHtml}
                         <div style="font-size: 0.75em; opacity: 0.85; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; width: 100%;">${detailText}</div>
                     </div>

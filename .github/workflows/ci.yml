@@ -188,6 +188,69 @@ jobs:
           fi
           echo "Verified: signupCount=$SIGNUP_COUNT"
 
+          # ── Tech Meeting smoke test ──────────────────────────────
+
+          # 5. Create tech meeting
+          TECH_EVENT=$(curl -sf -X POST http://localhost:8080/api/events \
+            -H "Content-Type: application/json" \
+            -b cookies.txt \
+            -d '{
+              "title":"CI Tech Meeting",
+              "startTime":"2099-02-15T14:00:00",
+              "endTime":"2099-02-15T15:00:00",
+              "capacity":5,
+              "eventType":1
+            }')
+          TECH_ID=$(echo "$TECH_EVENT" | jq -r .id)
+          TECH_OCC_ID=$(echo "$TECH_EVENT" | jq -r '.occurrences[0].id')
+          TECH_TYPE=$(echo "$TECH_EVENT" | jq -r .eventType)
+          echo "Tech meeting created: id=$TECH_ID, occurrence=$TECH_OCC_ID, type=$TECH_TYPE"
+
+          if [ "$TECH_TYPE" != "TechMeeting" ] && [ "$TECH_TYPE" != "1" ]; then
+            echo "FAIL: expected eventType=TechMeeting or 1, got $TECH_TYPE"
+            exit 1
+          fi
+
+          # 6. Signup on regular tech meeting should fail
+          SIGNUP_FAIL=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X POST "http://localhost:8080/api/events/${TECH_ID}/signup/${TECH_OCC_ID}" \
+            -b cookies.txt \
+            -H "Content-Type: application/json" \
+            -d '{"message":"Should fail"}')
+          if [ "$SIGNUP_FAIL" -ne 400 ]; then
+            echo "FAIL: signup on regular tech meeting should return 400, got $SIGNUP_FAIL"
+            exit 1
+          fi
+          echo "Signup blocked on regular tech meeting: OK"
+
+          # 7. Toggle to lightning talks
+          curl -sf -X POST "http://localhost:8080/api/events/occurrences/${TECH_OCC_ID}/lightning-talks" \
+            -b cookies.txt \
+            -H "Content-Type: application/json" \
+            -d '{"isLightningTalks":true}'
+          echo "Lightning talks enabled: OK"
+
+          # 8. Signup on lightning talks should succeed
+          curl -sf -X POST "http://localhost:8080/api/events/${TECH_ID}/signup/${TECH_OCC_ID}" \
+            -b cookies.txt \
+            -H "Content-Type: application/json" \
+            -d '{"message":"Lightning talk topic"}'
+          echo "Lightning talks signup: OK"
+
+          # 9. Verify lightning talks signup
+          TECH_VERIFY=$(curl -sf "http://localhost:8080/api/events/${TECH_ID}" -b cookies.txt)
+          TECH_SIGNUP_COUNT=$(echo "$TECH_VERIFY" | jq -r '.occurrences[0].signupCount')
+          TECH_IS_LR=$(echo "$TECH_VERIFY" | jq -r '.occurrences[0].isLightningTalks')
+          if [ "$TECH_SIGNUP_COUNT" -ne 1 ]; then
+            echo "FAIL: expected tech meeting signupCount=1, got $TECH_SIGNUP_COUNT"
+            exit 1
+          fi
+          if [ "$TECH_IS_LR" != "true" ]; then
+            echo "FAIL: expected isLightningTalks=true, got $TECH_IS_LR"
+            exit 1
+          fi
+          echo "Tech meeting verified: signupCount=$TECH_SIGNUP_COUNT, isLightningTalks=$TECH_IS_LR"
+
       - name: Stop container
         if: always()
         run: |

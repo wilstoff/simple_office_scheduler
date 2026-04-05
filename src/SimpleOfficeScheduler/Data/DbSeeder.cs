@@ -30,22 +30,45 @@ public class DbSeeder
         if (existing is not null)
         {
             _logger.LogInformation("Seed user '{Username}' already exists, skipping.", _seedSettings.Username);
-            return;
+        }
+        else
+        {
+            var user = new AppUser
+            {
+                Username = _seedSettings.Username,
+                DisplayName = _seedSettings.DisplayName,
+                Email = _seedSettings.Email,
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword(_seedSettings.Password),
+                IsLocalAccount = true,
+                CreatedAt = _clock.GetCurrentInstant()
+            };
+
+            _db.Users.Add(user);
+            await _db.SaveChangesAsync();
+
+            _logger.LogInformation("Seeded test user '{Username}'.", _seedSettings.Username);
         }
 
-        var user = new AppUser
+        foreach (var extra in _seedSettings.ExtraUsers)
         {
-            Username = _seedSettings.Username,
-            DisplayName = _seedSettings.DisplayName,
-            Email = _seedSettings.Email,
-            PasswordHash = BCrypt.Net.BCrypt.HashPassword(_seedSettings.Password),
-            IsLocalAccount = true,
-            CreatedAt = _clock.GetCurrentInstant()
-        };
+            if (string.IsNullOrEmpty(extra.Username)) continue;
+            if (await _db.Users.AnyAsync(u => u.Username == extra.Username))
+            {
+                _logger.LogInformation("Extra seed user '{Username}' already exists, skipping.", extra.Username);
+                continue;
+            }
 
-        _db.Users.Add(user);
-        await _db.SaveChangesAsync();
-
-        _logger.LogInformation("Seeded test user '{Username}'.", _seedSettings.Username);
+            _db.Users.Add(new AppUser
+            {
+                Username = extra.Username,
+                DisplayName = extra.DisplayName,
+                Email = extra.Email,
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword(extra.Password),
+                IsLocalAccount = true,
+                CreatedAt = _clock.GetCurrentInstant()
+            });
+            await _db.SaveChangesAsync();
+            _logger.LogInformation("Seeded extra user '{Username}'.", extra.Username);
+        }
     }
 }

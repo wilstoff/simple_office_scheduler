@@ -13,6 +13,9 @@ public class AppDbContext : DbContext
     public DbSet<Event> Events => Set<Event>();
     public DbSet<EventOccurrence> EventOccurrences => Set<EventOccurrence>();
     public DbSet<EventSignup> EventSignups => Set<EventSignup>();
+    public DbSet<OccurrenceContributor> OccurrenceContributors => Set<OccurrenceContributor>();
+    public DbSet<EventReminderDefinition> EventReminderDefinitions => Set<EventReminderDefinition>();
+    public DbSet<OccurrenceReminderValue> OccurrenceReminderValues => Set<OccurrenceReminderValue>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
@@ -54,6 +57,7 @@ public class AppDbContext : DbContext
 
             entity.Property(e => e.Title).HasMaxLength(256);
             entity.Property(e => e.TimeZoneId).HasMaxLength(100);
+            entity.Property(e => e.EventType).HasDefaultValue(EventType.OfficeHours);
 
             // RecurrencePattern as owned entity
             entity.OwnsOne(e => e.Recurrence, recurrence =>
@@ -88,6 +92,26 @@ public class AppDbContext : DbContext
 
             entity.HasIndex(e => new { e.EventId, e.StartTime });
             entity.HasIndex(e => e.StartTime);
+
+            entity.Property(e => e.NamePrefix).HasMaxLength(256);
+            entity.Property(e => e.NameSuffix).HasMaxLength(256);
+            entity.Ignore(e => e.DisplayName);
+        });
+
+        // OccurrenceContributor
+        modelBuilder.Entity<OccurrenceContributor>(entity =>
+        {
+            entity.HasOne(e => e.Occurrence)
+                .WithMany(o => o.Contributors)
+                .HasForeignKey(e => e.EventOccurrenceId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(e => e.User)
+                .WithMany(u => u.Contributions)
+                .HasForeignKey(e => e.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(e => new { e.EventOccurrenceId, e.UserId }).IsUnique();
         });
 
         // EventSignup
@@ -104,6 +128,34 @@ public class AppDbContext : DbContext
                 .OnDelete(DeleteBehavior.Cascade);
 
             entity.HasIndex(e => new { e.EventOccurrenceId, e.UserId }).IsUnique();
+        });
+
+        // EventReminderDefinition
+        modelBuilder.Entity<EventReminderDefinition>(entity =>
+        {
+            entity.HasOne(e => e.Event)
+                .WithMany(ev => ev.ReminderDefinitions)
+                .HasForeignKey(e => e.EventId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.Property(e => e.Name).HasMaxLength(100);
+            entity.HasIndex(e => new { e.EventId, e.Name }).IsUnique();
+        });
+
+        // OccurrenceReminderValue
+        modelBuilder.Entity<OccurrenceReminderValue>(entity =>
+        {
+            entity.HasOne(e => e.Occurrence)
+                .WithMany(o => o.ReminderValues)
+                .HasForeignKey(e => e.EventOccurrenceId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(e => e.ReminderDefinition)
+                .WithMany()
+                .HasForeignKey(e => e.ReminderDefinitionId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(e => new { e.EventOccurrenceId, e.ReminderDefinitionId }).IsUnique();
         });
     }
 
