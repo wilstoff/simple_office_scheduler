@@ -7,14 +7,14 @@ namespace SimpleOfficeScheduler.Data;
 
 public class DbSeeder
 {
-    private readonly AppDbContext _db;
+    private readonly IDbContextFactory<AppDbContext> _dbFactory;
     private readonly SeedUserSettings _seedSettings;
     private readonly IClock _clock;
     private readonly ILogger<DbSeeder> _logger;
 
-    public DbSeeder(AppDbContext db, IOptions<SeedUserSettings> seedSettings, IClock clock, ILogger<DbSeeder> logger)
+    public DbSeeder(IDbContextFactory<AppDbContext> dbFactory, IOptions<SeedUserSettings> seedSettings, IClock clock, ILogger<DbSeeder> logger)
     {
-        _db = db;
+        _dbFactory = dbFactory;
         _seedSettings = seedSettings.Value;
         _clock = clock;
         _logger = logger;
@@ -22,11 +22,12 @@ public class DbSeeder
 
     public async Task SeedAsync()
     {
-        await _db.Database.MigrateAsync();
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        await db.Database.MigrateAsync();
 
         if (!_seedSettings.Enabled) return;
 
-        var existing = await _db.Users.FirstOrDefaultAsync(u => u.Username == _seedSettings.Username);
+        var existing = await db.Users.FirstOrDefaultAsync(u => u.Username == _seedSettings.Username);
         if (existing is not null)
         {
             _logger.LogInformation("Seed user '{Username}' already exists, skipping.", _seedSettings.Username);
@@ -43,8 +44,8 @@ public class DbSeeder
                 CreatedAt = _clock.GetCurrentInstant()
             };
 
-            _db.Users.Add(user);
-            await _db.SaveChangesAsync();
+            db.Users.Add(user);
+            await db.SaveChangesAsync();
 
             _logger.LogInformation("Seeded test user '{Username}'.", _seedSettings.Username);
         }
@@ -52,13 +53,13 @@ public class DbSeeder
         foreach (var extra in _seedSettings.ExtraUsers)
         {
             if (string.IsNullOrEmpty(extra.Username)) continue;
-            if (await _db.Users.AnyAsync(u => u.Username == extra.Username))
+            if (await db.Users.AnyAsync(u => u.Username == extra.Username))
             {
                 _logger.LogInformation("Extra seed user '{Username}' already exists, skipping.", extra.Username);
                 continue;
             }
 
-            _db.Users.Add(new AppUser
+            db.Users.Add(new AppUser
             {
                 Username = extra.Username,
                 DisplayName = extra.DisplayName,
@@ -67,7 +68,7 @@ public class DbSeeder
                 IsLocalAccount = true,
                 CreatedAt = _clock.GetCurrentInstant()
             });
-            await _db.SaveChangesAsync();
+            await db.SaveChangesAsync();
             _logger.LogInformation("Seeded extra user '{Username}'.", extra.Username);
         }
     }

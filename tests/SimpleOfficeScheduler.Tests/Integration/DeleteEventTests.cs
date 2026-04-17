@@ -68,8 +68,8 @@ public class DeleteEventTests : IntegrationTestBase
         Assert.Equal(HttpStatusCode.OK, deleteResponse.StatusCode);
 
         // Verify all occurrences and signups are removed from DB
-        using var scope = Factory.Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var dbFactory = Factory.Services.GetRequiredService<IDbContextFactory<AppDbContext>>();
+        await using var db = await dbFactory.CreateDbContextAsync();
 
         var remainingOccurrences = await db.EventOccurrences
             .Where(o => o.EventId == evt.Id).CountAsync();

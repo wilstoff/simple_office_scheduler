@@ -3,7 +3,7 @@
 @inject IEventService EventService
 @inject AuthenticationStateProvider AuthStateProvider
 @inject IJSRuntime JS
-@inject SimpleOfficeScheduler.Data.AppDbContext Db
+@inject Microsoft.EntityFrameworkCore.IDbContextFactory<SimpleOfficeScheduler.Data.AppDbContext> DbFactory
 @inject NodaTime.IClock Clock
 @rendermode InteractiveServer
 
@@ -220,7 +220,8 @@
                 var uidClaim = authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
                 if (uidClaim is not null && int.TryParse(uidClaim.Value, out var uid))
                 {
-                    var user = await Db.Users.FindAsync(uid);
+                    await using var db = await DbFactory.CreateDbContextAsync();
+                    var user = await db.Users.FindAsync(uid);
                     userTzPref = user?.TimeZonePreference;
                 }
 

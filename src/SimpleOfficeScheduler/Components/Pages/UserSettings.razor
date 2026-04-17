@@ -2,7 +2,7 @@
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @using SimpleOfficeScheduler.Services
 @inject AuthenticationStateProvider AuthStateProvider
-@inject SimpleOfficeScheduler.Data.AppDbContext Db
+@inject Microsoft.EntityFrameworkCore.IDbContextFactory<SimpleOfficeScheduler.Data.AppDbContext> DbFactory
 @inject IJSRuntime JS
 @inject NavigationManager Navigation
 @rendermode InteractiveServer
@@ -111,7 +111,8 @@ else
             return;
         }
 
-        var user = await Db.Users.FindAsync(_userId);
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var user = await db.Users.FindAsync(_userId);
         if (user is null)
         {
             Navigation.NavigateTo("login");
@@ -147,11 +148,12 @@ else
         _theme = theme;
         await JS.InvokeVoidAsync("setTheme", theme);
 
-        var user = await Db.Users.FindAsync(_userId);
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var user = await db.Users.FindAsync(_userId);
         if (user is not null)
         {
             user.ThemePreference = theme;
-            await Db.SaveChangesAsync();
+            await db.SaveChangesAsync();
         }
     }
 
@@ -164,11 +166,12 @@ else
         _timeZoneId = newTz;
         _timezoneSaved = false;
 
-        var user = await Db.Users.FindAsync(_userId);
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var user = await db.Users.FindAsync(_userId);
         if (user is not null)
         {
             user.TimeZonePreference = newTz;
-            await Db.SaveChangesAsync();
+            await db.SaveChangesAsync();
             _timezoneSaved = true;
         }
     }

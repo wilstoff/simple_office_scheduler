@@ -17,6 +17,8 @@ namespace SimpleOfficeScheduler.Tests;
 public class EventServiceTests : IDisposable
 {
     private readonly SqliteConnection _connection;
+    private readonly DbContextOptions<AppDbContext> _options;
+    private readonly TestDbContextFactory _dbFactory;
     private readonly AppDbContext _db;
     private readonly Mock<ICalendarInviteService> _calendarMock;
     private readonly FakeClock _clock;
@@ -29,11 +31,12 @@ public class EventServiceTests : IDisposable
         _connection = new SqliteConnection("Data Source=:memory:");
         _connection.Open();
 
-        var options = new DbContextOptionsBuilder<AppDbContext>()
+        _options = new DbContextOptionsBuilder<AppDbContext>()
             .UseSqlite(_connection)
             .Options;
 
-        _db = new AppDbContext(options);
+        _dbFactory = new TestDbContextFactory(_options);
+        _db = _dbFactory.CreateDbContext();
         _db.Database.EnsureCreated();
 
         _calendarMock = new Mock<ICalendarInviteService>();
@@ -51,7 +54,7 @@ public class EventServiceTests : IDisposable
         });
 
         _sut = new EventService(
-            _db,
+            _dbFactory,
             new RecurrenceExpander(),
             _calendarMock.Object,
             recurrenceSettings,
@@ -64,6 +67,19 @@ public class EventServiceTests : IDisposable
     {
         _db.Dispose();
         _connection.Dispose();
+    }
+
+    /// <summary>
+    /// Yields a fresh AppDbContext for test reads, so each assertion sees current DB state
+    /// rather than the test-seed context's tracker cache after _sut writes via its own contexts.
+    /// </summary>
+    private AppDbContext NewDb() => _dbFactory.CreateDbContext();
+
+    private sealed class TestDbContextFactory : IDbContextFactory<AppDbContext>
+    {
+        private readonly DbContextOptions<AppDbContext> _options;
+        public TestDbContextFactory(DbContextOptions<AppDbContext> options) => _options = options;
+        public AppDbContext CreateDbContext() => new(_options);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────
@@ -292,6 +308,7 @@ public class EventServiceTests : IDisposable
             Times.Once);
 
         // GraphEventId stored
+        _db.ChangeTracker.Clear();
         var occurrence = await _db.EventOccurrences.FindAsync(occurrenceId);
         Assert.NotNull(occurrence!.GraphEventId);
     }
@@ -452,6 +469,7 @@ public class EventServiceTests : IDisposable
 
         // Sign up user (creates calendar meeting)
         await _sut.SignUpAsync(occurrenceId, user.Id, "Test topic");
+        _db.ChangeTracker.Clear();
         var occ = await _db.EventOccurrences.FindAsync(occurrenceId);
         Assert.NotNull(occ!.GraphEventId);
         var graphEventId = occ.GraphEventId;
@@ -467,8 +485,9 @@ public class EventServiceTests : IDisposable
         _calendarMock.Verify(c => c.RemoveAttendeeAsync(It.IsAny<string>(), It.Is<AppUser>(u => u.Id == user.Id), It.IsAny<IReadOnlyList<EventSignup>>()), Times.Never);
 
         // GraphEventId should be cleared
-        await _db.Entry(occ).ReloadAsync();
-        Assert.Null(occ.GraphEventId);
+        _db.ChangeTracker.Clear();
+        var refreshed = await _db.EventOccurrences.FindAsync(occurrenceId);
+        Assert.Null(refreshed!.GraphEventId);
     }
 
     // ── CancelOccurrenceAsync ───────────────────────────────────────
@@ -489,6 +508,7 @@ public class EventServiceTests : IDisposable
         Assert.True(success);
         Assert.Null(error);
 
+        _db.ChangeTracker.Clear();
         var occurrence = await _db.EventOccurrences.FindAsync(occurrenceId);
         Assert.True(occurrence!.IsCancelled);
 
@@ -535,11 +555,13 @@ public class EventServiceTests : IDisposable
 
         // First signup creates a meeting
         await _sut.SignUpAsync(occId, user.Id, "Test topic");
+        _db.ChangeTracker.Clear();
         var occ = await _db.EventOccurrences.FindAsync(occId);
         Assert.NotNull(occ!.GraphEventId);
 
         // Cancel occurrence → meeting cancelled, GraphEventId should be cleared
         await _sut.CancelOccurrenceAsync(occId, owner.Id);
+        _db.ChangeTracker.Clear();
         occ = await _db.EventOccurrences.FindAsync(occId);
         Assert.Null(occ!.GraphEventId);
 
@@ -602,6 +624,7 @@ public class EventServiceTests : IDisposable
         // Uncancel → should recreate meeting for existing signup
         await _sut.UncancelOccurrenceAsync(occId, owner.Id);
 
+        _db.ChangeTracker.Clear();
         var occ = await _db.EventOccurrences.FindAsync(occId);
         Assert.NotNull(occ!.GraphEventId);  // New meeting created
 
@@ -1212,6 +1235,7 @@ public class EventServiceTests : IDisposable
             It.Is<IReadOnlyList<AppUser>>(users => users.Count == 1 && users[0].Id == contributor.Id)),
             Times.Once);
 
+        _db.ChangeTracker.Clear();
         var occurrence = await _db.EventOccurrences.FindAsync(occurrenceId);
         Assert.Equal("graph-contrib-id", occurrence!.GraphEventId);
     }
@@ -1271,6 +1295,7 @@ public class EventServiceTests : IDisposable
         Assert.True(success);
         Assert.Null(error);
 
+        _db.ChangeTracker.Clear();
         var occurrence = await _db.EventOccurrences.FindAsync(occurrenceId);
         Assert.True(occurrence!.IsLightningTalks);
 
@@ -1311,6 +1336,7 @@ public class EventServiceTests : IDisposable
         Assert.True(success);
         Assert.Null(error);
 
+        _db.ChangeTracker.Clear();
         var updated = await _db.EventOccurrences.FindAsync(occurrence.Id);
         Assert.False(updated!.IsLightningTalks);
 
@@ -1351,6 +1377,73 @@ public class EventServiceTests : IDisposable
         await _sut.ToggleLightningTalksAsync(occurrenceId, owner.Id, true);
 
         _calendarMock.Verify(c => c.CancelMeetingAsync("graph-meeting-id", It.Is<AppUser>(u => u.Id == owner.Id)), Times.Once);
+    }
+
+    [Fact]
+    public async Task EventService_Operations_SucceedAfterExternalDbContextDisposed()
+    {
+        // Mirrors the production ObjectDisposedException: in Blazor Server the scoped
+        // AppDbContext can be disposed mid-operation when the circuit tears down. If
+        // EventService holds the scoped context directly, the in-flight SaveChangesAsync
+        // throws and can orphan a Teams meeting. EventService must use
+        // IDbContextFactory<AppDbContext> so each operation owns its own short-lived
+        // context that is independent of any external scope.
+        var owner = await SeedOwnerAsync();
+        var user = await SeedUserAsync();
+        var evt = await _sut.CreateEventAsync(
+            MakeSingleEvent(owner.Id, eventType: EventType.TechMeeting), owner.Id);
+        var occurrenceId = (await _db.EventOccurrences.FirstAsync(o => o.EventId == evt.Id)).Id;
+        await _sut.ToggleLightningTalksAsync(occurrenceId, owner.Id, true, 5);
+
+        // Simulate the circuit/scope disposing the DbContext that EventService was
+        // injected with. The underlying SqliteConnection stays open.
+        _db.Dispose();
+
+        var (success, error) = await _sut.SignUpAsync(occurrenceId, user.Id, "My talk");
+        Assert.True(success, error);
+    }
+
+    [Fact]
+    public async Task ToggleLightningTalks_CapacityOnlyChange_PreservesMeetingAndSignups()
+    {
+        // Reproduces the bug where changing the capacity input on an already-lightning-talks
+        // occurrence cancels the Teams meeting and clears GraphEventId, causing subsequent
+        // signups to create a duplicate meeting.
+        var owner = await SeedOwnerAsync();
+        var signupUser = await SeedUserAsync("firstSignup");
+
+        var evt = await _sut.CreateEventAsync(
+            MakeSingleEvent(owner.Id, eventType: EventType.TechMeeting, capacity: 3), owner.Id);
+        var occurrenceId = (await _db.EventOccurrences.FirstAsync(o => o.EventId == evt.Id)).Id;
+
+        // Turn on lightning talks with capacity 3
+        await _sut.ToggleLightningTalksAsync(occurrenceId, owner.Id, true, 3);
+
+        // First user signs up — this creates the Teams meeting and persists GraphEventId
+        var signup = await _sut.SignUpAsync(occurrenceId, signupUser.Id, "My talk");
+        Assert.True(signup.Success, signup.Error);
+
+        _db.ChangeTracker.Clear();
+        var originalGraphEventId = (await _db.EventOccurrences.FindAsync(occurrenceId))!.GraphEventId;
+        Assert.False(string.IsNullOrEmpty(originalGraphEventId));
+
+        // Owner bumps the capacity — isLightningTalks stays true, only capacity changes
+        var (success, error) = await _sut.ToggleLightningTalksAsync(occurrenceId, owner.Id, true, 5);
+        Assert.True(success, error);
+
+        // Meeting must NOT be cancelled
+        _calendarMock.Verify(c => c.CancelMeetingAsync(
+            It.IsAny<string>(), It.IsAny<AppUser>()), Times.Never);
+
+        _db.ChangeTracker.Clear();
+        var occurrence = await _db.EventOccurrences
+            .Include(o => o.Signups)
+            .FirstAsync(o => o.Id == occurrenceId);
+
+        Assert.Equal(originalGraphEventId, occurrence.GraphEventId);
+        Assert.True(occurrence.IsLightningTalks);
+        Assert.Equal(5, occurrence.LightningTalksCapacity);
+        Assert.Single(occurrence.Signups);
     }
 
     // ── TechMeeting: SignUp Guard ───────────────────────────────────
@@ -1401,6 +1494,7 @@ public class EventServiceTests : IDisposable
 
         Assert.True(success);
         Assert.Null(error);
+        _db.ChangeTracker.Clear();
         var occurrence = await _db.EventOccurrences.FindAsync(occurrenceId);
         Assert.Equal("Sprint Review", occurrence!.NamePrefix);
     }
@@ -1427,6 +1521,7 @@ public class EventServiceTests : IDisposable
 
         Assert.True(success);
         Assert.Null(error);
+        _db.ChangeTracker.Clear();
         var occurrence = await _db.EventOccurrences.FindAsync(occurrenceId);
         Assert.Equal("API Design", occurrence!.NameSuffix);
     }

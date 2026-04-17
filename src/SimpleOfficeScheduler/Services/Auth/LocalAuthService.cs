@@ -5,12 +5,12 @@ namespace SimpleOfficeScheduler.Services.Auth;
 
 public class LocalAuthService : IAuthenticationService
 {
-    private readonly AppDbContext _db;
+    private readonly IDbContextFactory<AppDbContext> _dbFactory;
     private readonly ILogger<LocalAuthService> _logger;
 
-    public LocalAuthService(AppDbContext db, ILogger<LocalAuthService> logger)
+    public LocalAuthService(IDbContextFactory<AppDbContext> dbFactory, ILogger<LocalAuthService> logger)
     {
-        _db = db;
+        _dbFactory = dbFactory;
         _logger = logger;
     }
 
@@ -18,7 +18,8 @@ public class LocalAuthService : IAuthenticationService
     {
         _logger.LogInformation("Login attempt for user '{Username}'", username);
 
-        var user = await _db.Users.FirstOrDefaultAsync(u => u.Username == username && u.IsLocalAccount);
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        var user = await db.Users.FirstOrDefaultAsync(u => u.Username == username && u.IsLocalAccount);
         if (user is null)
         {
             _logger.LogWarning("User '{Username}' not found or not a local account.", username);

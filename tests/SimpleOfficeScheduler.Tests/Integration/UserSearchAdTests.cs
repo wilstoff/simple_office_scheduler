@@ -49,16 +49,10 @@ public class UserSearchAdTests : IAsyncLifetime
             .WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Testing");
+                // Point AddDbContextFactory at a per-test SQLite file via config
+                builder.UseSetting("ConnectionStrings:DefaultConnection", $"Data Source={_dbPath}");
                 builder.ConfigureServices(services =>
                 {
-                    // Use unique SQLite DB per test
-                    var descriptor = services.SingleOrDefault(
-                        d => d.ServiceType == typeof(DbContextOptions<AppDbContext>));
-                    if (descriptor != null) services.Remove(descriptor);
-                    services.AddDbContext<AppDbContext>(options =>
-                        options.UseSqlite($"Data Source={_dbPath}",
-                            o => o.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery)));
-
                     // Remove background service
                     var bgService = services.SingleOrDefault(
                         d => d.ImplementationType?.Name == "RecurrenceExpansionBackgroundService");
@@ -93,8 +87,8 @@ public class UserSearchAdTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        using var scope = _factory.Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var dbFactory = _factory.Services.GetRequiredService<IDbContextFactory<AppDbContext>>();
+        await using var db = await dbFactory.CreateDbContextAsync();
         await db.Database.EnsureCreatedAsync();
 
         if (!await db.Users.AnyAsync(u => u.Username == "testadmin"))
@@ -223,8 +217,8 @@ public class UserSearchAdTests : IAsyncLifetime
         Assert.Equal("New AD User", result.DisplayName);
 
         // Verify user was persisted to DB
-        using var scope = _factory.Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var dbFactory = _factory.Services.GetRequiredService<IDbContextFactory<AppDbContext>>();
+        await using var db = await dbFactory.CreateDbContextAsync();
         var dbUser = await db.Users.FirstOrDefaultAsync(u => u.Username == "newaduser");
         Assert.NotNull(dbUser);
         Assert.False(dbUser.IsLocalAccount);
@@ -244,8 +238,8 @@ public class UserSearchAdTests : IAsyncLifetime
 
     private async Task SeedUserAsync(string username, string displayName)
     {
-        using var scope = _factory.Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var dbFactory = _factory.Services.GetRequiredService<IDbContextFactory<AppDbContext>>();
+        await using var db = await dbFactory.CreateDbContextAsync();
         if (!await db.Users.AnyAsync(u => u.Username == username))
         {
             db.Users.Add(new AppUser

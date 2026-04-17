@@ -13,11 +13,11 @@ namespace SimpleOfficeScheduler.Controllers;
 [Authorize]
 public class UserSettingsApiController : ControllerBase
 {
-    private readonly AppDbContext _db;
+    private readonly IDbContextFactory<AppDbContext> _dbFactory;
 
-    public UserSettingsApiController(AppDbContext db)
+    public UserSettingsApiController(IDbContextFactory<AppDbContext> dbFactory)
     {
-        _db = db;
+        _dbFactory = dbFactory;
     }
 
     private int GetUserId() =>
@@ -26,7 +26,8 @@ public class UserSettingsApiController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> GetSettings()
     {
-        var user = await _db.Users.FindAsync(GetUserId());
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        var user = await db.Users.FindAsync(GetUserId());
         if (user is null) return NotFound();
 
         return Ok(new UserSettingsResponse
@@ -45,11 +46,12 @@ public class UserSettingsApiController : ControllerBase
         if (request.Theme is not ("dark" or "light"))
             return BadRequest(new { error = "Invalid theme. Must be 'dark' or 'light'." });
 
-        var user = await _db.Users.FindAsync(GetUserId());
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        var user = await db.Users.FindAsync(GetUserId());
         if (user is null) return NotFound();
 
         user.ThemePreference = request.Theme;
-        await _db.SaveChangesAsync();
+        await db.SaveChangesAsync();
         return Ok();
     }
 
@@ -59,11 +61,12 @@ public class UserSettingsApiController : ControllerBase
         if (string.IsNullOrEmpty(request.TimeZoneId) || !TimeZoneHelper.IsValidTimeZoneId(request.TimeZoneId))
             return BadRequest(new { error = "Invalid timezone ID." });
 
-        var user = await _db.Users.FindAsync(GetUserId());
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        var user = await db.Users.FindAsync(GetUserId());
         if (user is null) return NotFound();
 
         user.TimeZonePreference = request.TimeZoneId;
-        await _db.SaveChangesAsync();
+        await db.SaveChangesAsync();
         return Ok();
     }
 }

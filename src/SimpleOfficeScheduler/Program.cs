@@ -27,8 +27,11 @@ builder.Services.Configure<TimezoneSettings>(builder.Configuration.GetSection("T
 // NodaTime
 builder.Services.AddSingleton<IClock>(SystemClock.Instance);
 
-// Database
-builder.Services.AddDbContext<AppDbContext>(options =>
+// Database — factory pattern so every operation owns a fresh DbContext.
+// Required for Blazor Server: a circuit-scoped DbContext can be disposed
+// mid-operation (e.g. when components re-render or navigate), which caused
+// ObjectDisposedException and orphan Teams meetings in SignUpAsync.
+builder.Services.AddDbContextFactory<AppDbContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection"),
         o => o.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery)));
 
