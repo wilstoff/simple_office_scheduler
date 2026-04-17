@@ -42,7 +42,8 @@ public class RecurrenceExpansionBackgroundService : BackgroundService
     private async Task ExpandRecurringEvents(CancellationToken ct)
     {
         using var scope = _serviceProvider.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var dbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<AppDbContext>>();
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
         var expander = scope.ServiceProvider.GetRequiredService<RecurrenceExpander>();
         var clock = scope.ServiceProvider.GetRequiredService<IClock>();
 

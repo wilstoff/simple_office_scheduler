@@ -35,19 +35,11 @@ public class IntegrationTestBase : IAsyncLifetime
             .WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Testing");
+                // Point the factory at a unique per-test SQLite file via config so
+                // Program.cs's AddDbContextFactory call picks it up.
+                builder.UseSetting("ConnectionStrings:DefaultConnection", $"Data Source={_dbPath}");
                 builder.ConfigureServices(services =>
                 {
-                    // Remove existing DbContext registration
-                    var descriptor = services.SingleOrDefault(
-                        d => d.ServiceType == typeof(DbContextOptions<AppDbContext>));
-                    if (descriptor != null)
-                        services.Remove(descriptor);
-
-                    // Use a unique SQLite DB per test class
-                    services.AddDbContext<AppDbContext>(options =>
-                        options.UseSqlite($"Data Source={_dbPath}",
-                            o => o.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery)));
-
                     // Remove the background service to avoid interference
                     var bgService = services.SingleOrDefault(
                         d => d.ImplementationType?.Name == "RecurrenceExpansionBackgroundService");
@@ -66,8 +58,8 @@ public class IntegrationTestBase : IAsyncLifetime
     public async Task InitializeAsync()
     {
         // Ensure DB is created and seeded
-        using var scope = Factory.Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var dbFactory = Factory.Services.GetRequiredService<IDbContextFactory<AppDbContext>>();
+        await using var db = await dbFactory.CreateDbContextAsync();
         await db.Database.EnsureCreatedAsync();
 
         // Seed test user
@@ -139,8 +131,8 @@ public class IntegrationTestBase : IAsyncLifetime
 
     protected async Task<AppUser> CreateSecondUserAsync(string username = "user2")
     {
-        using var scope = Factory.Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var dbFactory = Factory.Services.GetRequiredService<IDbContextFactory<AppDbContext>>();
+        await using var db = await dbFactory.CreateDbContextAsync();
 
         var existing = await db.Users.FirstOrDefaultAsync(u => u.Username == username);
         if (existing != null) return existing;

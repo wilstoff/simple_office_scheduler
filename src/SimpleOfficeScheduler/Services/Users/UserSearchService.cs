@@ -9,18 +9,18 @@ namespace SimpleOfficeScheduler.Services.Users;
 
 public class UserSearchService : IUserSearchService
 {
-    private readonly AppDbContext _db;
+    private readonly IDbContextFactory<AppDbContext> _dbFactory;
     private readonly ActiveDirectorySettings _adSettings;
     private readonly ILdapConnectionFactory _ldapFactory;
     private readonly ILogger<UserSearchService> _logger;
 
     public UserSearchService(
-        AppDbContext db,
+        IDbContextFactory<AppDbContext> dbFactory,
         IOptions<ActiveDirectorySettings> adSettings,
         ILdapConnectionFactory ldapFactory,
         ILogger<UserSearchService> logger)
     {
-        _db = db;
+        _dbFactory = dbFactory;
         _adSettings = adSettings.Value;
         _ldapFactory = ldapFactory;
         _logger = logger;
@@ -34,8 +34,10 @@ public class UserSearchService : IUserSearchService
 
         var term = searchTerm.Trim();
 
+        await using var db = await _dbFactory.CreateDbContextAsync();
+
         // Search local database
-        var dbQuery = _db.Users
+        var dbQuery = db.Users
             .Where(u => EF.Functions.Like(u.DisplayName, $"%{term}%")
                      || EF.Functions.Like(u.Username, $"%{term}%")
                      || EF.Functions.Like(u.Email, $"%{term}%"));
@@ -74,7 +76,7 @@ public class UserSearchService : IUserSearchService
                 // Check if this AD user is excluded
                 if (excludeUserId.HasValue)
                 {
-                    var localMatch = await _db.Users
+                    var localMatch = await db.Users
                         .FirstOrDefaultAsync(u => u.Username == adUser.Username);
                     if (localMatch?.Id == excludeUserId.Value)
                         continue;
@@ -93,8 +95,10 @@ public class UserSearchService : IUserSearchService
 
     public async Task<UserSearchResult?> EnsureUserAsync(string username)
     {
+        await using var db = await _dbFactory.CreateDbContextAsync();
+
         // Check if already in local DB
-        var existing = await _db.Users.FirstOrDefaultAsync(u => u.Username == username);
+        var existing = await db.Users.FirstOrDefaultAsync(u => u.Username == username);
         if (existing is not null)
         {
             return new UserSearchResult
@@ -152,8 +156,8 @@ public class UserSearchService : IUserSearchService
                     IsLocalAccount = false,
                     CreatedAt = NodaTime.SystemClock.Instance.GetCurrentInstant()
                 };
-                _db.Users.Add(user);
-                await _db.SaveChangesAsync();
+                db.Users.Add(user);
+                await db.SaveChangesAsync();
 
                 return new UserSearchResult
                 {

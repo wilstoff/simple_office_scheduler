@@ -28,14 +28,9 @@ public class GraphCalendarServiceTests : IDisposable
                 {
                     cfg.AddInMemoryCollection(config);
                 });
+                builder.UseSetting("ConnectionStrings:DefaultConnection", "Data Source=:memory:");
                 builder.ConfigureServices(services =>
                 {
-                    var descriptor = services.SingleOrDefault(
-                        d => d.ServiceType == typeof(DbContextOptions<AppDbContext>));
-                    if (descriptor != null) services.Remove(descriptor);
-                    services.AddDbContext<AppDbContext>(options =>
-                        options.UseSqlite("Data Source=:memory:"));
-
                     var bgService = services.SingleOrDefault(
                         d => d.ImplementationType?.Name == "RecurrenceExpansionBackgroundService");
                     if (bgService != null) services.Remove(bgService);

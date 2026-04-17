@@ -10,7 +10,7 @@ namespace SimpleOfficeScheduler.Services.Events;
 
 public class EventService : IEventService
 {
-    private readonly AppDbContext _db;
+    private readonly IDbContextFactory<AppDbContext> _dbFactory;
     private readonly RecurrenceExpander _expander;
     private readonly ICalendarInviteService _calendarService;
     private readonly RecurrenceSettings _recurrenceSettings;
@@ -19,7 +19,7 @@ public class EventService : IEventService
     private readonly CalendarUpdateNotifier _notifier;
 
     public EventService(
-        AppDbContext db,
+        IDbContextFactory<AppDbContext> dbFactory,
         RecurrenceExpander expander,
         ICalendarInviteService calendarService,
         IOptions<RecurrenceSettings> recurrenceSettings,
@@ -27,7 +27,7 @@ public class EventService : IEventService
         ILogger<EventService> logger,
         CalendarUpdateNotifier notifier)
     {
-        _db = db;
+        _dbFactory = dbFactory;
         _expander = expander;
         _calendarService = calendarService;
         _recurrenceSettings = recurrenceSettings.Value;
@@ -49,6 +49,8 @@ public class EventService : IEventService
         if (evt.EndTime.CompareTo(evt.StartTime) <= 0)
             throw new ArgumentException("End time must be after start time.");
 
+        await using var db = await _dbFactory.CreateDbContextAsync();
+
         evt.OwnerUserId = ownerUserId;
         evt.DurationMinutes = (int)Period.Between(evt.StartTime, evt.EndTime).ToDuration().TotalMinutes;
         evt.CreatedAt = Now;
@@ -57,8 +59,8 @@ public class EventService : IEventService
         // Resolve timezone ID (validate or fall back to default)
         evt.TimeZoneId = TimeZoneHelper.ResolveTimeZoneId(evt.TimeZoneId);
 
-        _db.Events.Add(evt);
-        await _db.SaveChangesAsync();
+        db.Events.Add(evt);
+        await db.SaveChangesAsync();
 
         // Generate occurrences
         var nowInTz = NowInEventTimeZone(evt);
@@ -67,7 +69,7 @@ public class EventService : IEventService
 
         foreach (var (start, end) in dates)
         {
-            _db.EventOccurrences.Add(new EventOccurrence
+            db.EventOccurrences.Add(new EventOccurrence
             {
                 EventId = evt.Id,
                 StartTime = start,
@@ -75,14 +77,15 @@ public class EventService : IEventService
             });
         }
 
-        await _db.SaveChangesAsync();
+        await db.SaveChangesAsync();
         _notifier.Notify();
         return evt;
     }
 
     public async Task<Event?> GetEventAsync(int eventId)
     {
-        return await _db.Events
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        return await db.Events
             .Include(e => e.Owner)
             .Include(e => e.ReminderDefinitions.OrderBy(d => d.DisplayOrder))
             .Include(e => e.Occurrences)
@@ -98,7 +101,8 @@ public class EventService : IEventService
 
     public async Task<List<Event>> SearchEventsAsync(string? searchTerm)
     {
-        var query = _db.Events
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        var query = db.Events
             .Include(e => e.Owner)
             .Include(e => e.Occurrences)
             .AsQueryable();
@@ -117,7 +121,8 @@ public class EventService : IEventService
 
     public async Task<List<EventOccurrence>> GetOccurrencesInRangeAsync(LocalDateTime start, LocalDateTime end)
     {
-        return await _db.EventOccurrences
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        return await db.EventOccurrences
             .Include(o => o.Event)
                 .ThenInclude(e => e.Owner)
             .Include(o => o.Signups)
@@ -130,7 +135,8 @@ public class EventService : IEventService
 
     public async Task<EventOccurrence?> GetOccurrenceAsync(int occurrenceId)
     {
-        return await _db.EventOccurrences
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        return await db.EventOccurrences
             .Include(o => o.Event)
                 .ThenInclude(e => e.Owner)
             .Include(o => o.Signups)
@@ -145,7 +151,9 @@ public class EventService : IEventService
         if (string.IsNullOrWhiteSpace(message))
             return (false, "A message is required when signing up.");
 
-        var occurrence = await _db.EventOccurrences
+        await using var db = await _dbFactory.CreateDbContextAsync();
+
+        var occurrence = await db.EventOccurrences
             .Include(o => o.Event)
                 .ThenInclude(e => e.Owner)
             .Include(o => o.Signups)
@@ -167,7 +175,7 @@ public class EventService : IEventService
         if (occurrence.Signups.Count >= effectiveCapacity)
             return (false, "This occurrence is full.");
 
-        var user = await _db.Users.FindAsync(userId);
+        var user = await db.Users.FindAsync(userId);
         if (user is null)
             return (false, "User not found.");
 
@@ -179,11 +187,11 @@ public class EventService : IEventService
             Message = message
         };
 
-        _db.EventSignups.Add(signup);
-        await _db.SaveChangesAsync();
+        db.EventSignups.Add(signup);
+        await db.SaveChangesAsync();
 
         // Reload signups with User navigation for calendar body
-        var allSignups = await _db.EventSignups
+        var allSignups = await db.EventSignups
             .Include(s => s.User)
             .Where(s => s.EventOccurrenceId == occurrenceId)
             .ToListAsync();
@@ -195,7 +203,7 @@ public class EventService : IEventService
             {
                 var graphEventId = await _calendarService.CreateMeetingAsync(occurrence, occurrence.Event.Owner, user, allSignups);
                 occurrence.GraphEventId = graphEventId;
-                await _db.SaveChangesAsync();
+                await db.SaveChangesAsync();
             }
             else
             {
@@ -214,17 +222,19 @@ public class EventService : IEventService
 
     public async Task<(bool Success, string? Error)> CancelSignUpAsync(int occurrenceId, int userId)
     {
-        var signup = await _db.EventSignups
+        await using var db = await _dbFactory.CreateDbContextAsync();
+
+        var signup = await db.EventSignups
             .FirstOrDefaultAsync(s => s.EventOccurrenceId == occurrenceId && s.UserId == userId);
 
         if (signup is null)
             return (false, "You are not signed up for this occurrence.");
 
-        _db.EventSignups.Remove(signup);
-        await _db.SaveChangesAsync();
+        db.EventSignups.Remove(signup);
+        await db.SaveChangesAsync();
 
         // Update calendar invite
-        var occurrence = await _db.EventOccurrences
+        var occurrence = await db.EventOccurrences
             .Include(o => o.Event)
                 .ThenInclude(e => e.Owner)
             .Include(o => o.Signups)
@@ -239,11 +249,11 @@ public class EventService : IEventService
                     // Last signup removed — cancel the entire meeting
                     await _calendarService.CancelMeetingAsync(occurrence.GraphEventId, occurrence.Event.Owner);
                     occurrence.GraphEventId = null;
-                    await _db.SaveChangesAsync();
+                    await db.SaveChangesAsync();
                 }
                 else
                 {
-                    var user = await _db.Users.FindAsync(userId);
+                    var user = await db.Users.FindAsync(userId);
                     if (user is not null)
                         await _calendarService.RemoveAttendeeAsync(occurrence.GraphEventId, user, occurrence.Signups.ToList());
                 }
@@ -261,7 +271,9 @@ public class EventService : IEventService
 
     public async Task<(bool Success, string? Error)> CancelOccurrenceAsync(int occurrenceId, int userId)
     {
-        var occurrence = await _db.EventOccurrences
+        await using var db = await _dbFactory.CreateDbContextAsync();
+
+        var occurrence = await db.EventOccurrences
             .Include(o => o.Event)
                 .ThenInclude(e => e.Owner)
             .FirstOrDefaultAsync(o => o.Id == occurrenceId);
@@ -273,7 +285,7 @@ public class EventService : IEventService
             return (false, "Only the event owner can cancel occurrences.");
 
         occurrence.IsCancelled = true;
-        await _db.SaveChangesAsync();
+        await db.SaveChangesAsync();
 
         // Cancel calendar invite if exists
         if (!string.IsNullOrEmpty(occurrence.GraphEventId))
@@ -289,7 +301,7 @@ public class EventService : IEventService
             }
 
             occurrence.GraphEventId = null;
-            await _db.SaveChangesAsync();
+            await db.SaveChangesAsync();
         }
 
         _notifier.Notify();
@@ -298,7 +310,9 @@ public class EventService : IEventService
 
     public async Task<(bool Success, string? Error)> UncancelOccurrenceAsync(int occurrenceId, int userId)
     {
-        var occurrence = await _db.EventOccurrences
+        await using var db = await _dbFactory.CreateDbContextAsync();
+
+        var occurrence = await db.EventOccurrences
             .Include(o => o.Event)
                 .ThenInclude(e => e.Owner)
             .FirstOrDefaultAsync(o => o.Id == occurrenceId);
@@ -313,10 +327,10 @@ public class EventService : IEventService
             return (false, "This occurrence is not cancelled.");
 
         occurrence.IsCancelled = false;
-        await _db.SaveChangesAsync();
+        await db.SaveChangesAsync();
 
         // Recreate calendar invite if there are existing signups
-        var signups = await _db.EventSignups
+        var signups = await db.EventSignups
             .Include(s => s.User)
             .Where(s => s.EventOccurrenceId == occurrenceId)
             .ToListAsync();
@@ -329,7 +343,7 @@ public class EventService : IEventService
                 var graphEventId = await _calendarService.CreateMeetingAsync(
                     occurrence, occurrence.Event.Owner, firstSignup.User, signups);
                 occurrence.GraphEventId = graphEventId;
-                await _db.SaveChangesAsync();
+                await db.SaveChangesAsync();
 
                 foreach (var signup in signups.Skip(1))
                 {
@@ -349,7 +363,9 @@ public class EventService : IEventService
 
     public async Task<(bool Success, string? Error)> UpdateEventAsync(Event updatedEvent, int userId)
     {
-        var existing = await _db.Events
+        await using var db = await _dbFactory.CreateDbContextAsync();
+
+        var existing = await db.Events
             .Include(e => e.Occurrences)
                 .ThenInclude(o => o.Signups)
             .FirstOrDefaultAsync(e => e.Id == updatedEvent.Id);
@@ -383,7 +399,7 @@ public class EventService : IEventService
 
         foreach (var occ in futureOccurrencesWithoutSignups)
         {
-            _db.EventOccurrences.Remove(occ);
+            db.EventOccurrences.Remove(occ);
         }
 
         // Regenerate occurrences
@@ -400,7 +416,7 @@ public class EventService : IEventService
         {
             if (!existingStartTimes.Contains(start) && start.CompareTo(nowInTz) > 0)
             {
-                _db.EventOccurrences.Add(new EventOccurrence
+                db.EventOccurrences.Add(new EventOccurrence
                 {
                     EventId = existing.Id,
                     StartTime = start,
@@ -409,14 +425,16 @@ public class EventService : IEventService
             }
         }
 
-        await _db.SaveChangesAsync();
+        await db.SaveChangesAsync();
         _notifier.Notify();
         return (true, null);
     }
 
     public async Task<(bool Success, string? Error)> DeleteEventAsync(int eventId, int userId)
     {
-        var existing = await _db.Events
+        await using var db = await _dbFactory.CreateDbContextAsync();
+
+        var existing = await db.Events
             .Include(e => e.Owner)
             .Include(e => e.Occurrences)
                 .ThenInclude(o => o.Signups)
@@ -442,8 +460,8 @@ public class EventService : IEventService
             }
         }
 
-        _db.Events.Remove(existing);
-        await _db.SaveChangesAsync();
+        db.Events.Remove(existing);
+        await db.SaveChangesAsync();
 
         _notifier.Notify();
         return (true, null);
@@ -451,20 +469,22 @@ public class EventService : IEventService
 
     public async Task<(bool Success, string? Error)> TransferOwnershipAsync(int eventId, int currentOwnerId, int newOwnerId)
     {
-        var evt = await _db.Events.FindAsync(eventId);
+        await using var db = await _dbFactory.CreateDbContextAsync();
+
+        var evt = await db.Events.FindAsync(eventId);
         if (evt is null)
             return (false, "Event not found.");
 
         if (evt.OwnerUserId != currentOwnerId)
             return (false, "Only the current owner can transfer ownership.");
 
-        var newOwner = await _db.Users.FindAsync(newOwnerId);
+        var newOwner = await db.Users.FindAsync(newOwnerId);
         if (newOwner is null)
             return (false, "New owner not found.");
 
         evt.OwnerUserId = newOwnerId;
         evt.UpdatedAt = Now;
-        await _db.SaveChangesAsync();
+        await db.SaveChangesAsync();
 
         _notifier.Notify();
         return (true, null);
@@ -474,7 +494,9 @@ public class EventService : IEventService
 
     public async Task<(bool Success, string? Error)> SetContributorsAsync(int occurrenceId, int userId, List<int> contributorUserIds)
     {
-        var occurrence = await _db.EventOccurrences
+        await using var db = await _dbFactory.CreateDbContextAsync();
+
+        var occurrence = await db.EventOccurrences
             .Include(o => o.Event)
             .Include(o => o.Contributors)
             .FirstOrDefaultAsync(o => o.Id == occurrenceId);
@@ -492,25 +514,25 @@ public class EventService : IEventService
             return (false, "Cannot assign contributors to a lightning talks occurrence.");
 
         // Remove existing contributors
-        _db.OccurrenceContributors.RemoveRange(occurrence.Contributors);
+        db.OccurrenceContributors.RemoveRange(occurrence.Contributors);
 
         // Add new contributors
         foreach (var contributorId in contributorUserIds)
         {
-            _db.OccurrenceContributors.Add(new OccurrenceContributor
+            db.OccurrenceContributors.Add(new OccurrenceContributor
             {
                 EventOccurrenceId = occurrenceId,
                 UserId = contributorId
             });
         }
 
-        await _db.SaveChangesAsync();
+        await db.SaveChangesAsync();
 
         // Calendar integration
-        var owner = await _db.Users.FindAsync(occurrence.Event.OwnerUserId);
+        var owner = await db.Users.FindAsync(occurrence.Event.OwnerUserId);
         if (contributorUserIds.Count > 0)
         {
-            var contributors = await _db.Users
+            var contributors = await db.Users
                 .Where(u => contributorUserIds.Contains(u.Id))
                 .ToListAsync();
 
@@ -522,14 +544,14 @@ public class EventService : IEventService
             {
                 var graphEventId = await _calendarService.CreateMeetingForContributorsAsync(occurrence, owner!, contributors);
                 occurrence.GraphEventId = graphEventId;
-                await _db.SaveChangesAsync();
+                await db.SaveChangesAsync();
             }
         }
         else if (occurrence.GraphEventId is not null)
         {
             await _calendarService.CancelMeetingAsync(occurrence.GraphEventId, owner!);
             occurrence.GraphEventId = null;
-            await _db.SaveChangesAsync();
+            await db.SaveChangesAsync();
         }
 
         _notifier.Notify();
@@ -538,7 +560,9 @@ public class EventService : IEventService
 
     public async Task<(bool Success, string? Error)> ToggleLightningTalksAsync(int occurrenceId, int userId, bool isLightningTalks, int? capacity = null)
     {
-        var occurrence = await _db.EventOccurrences
+        await using var db = await _dbFactory.CreateDbContextAsync();
+
+        var occurrence = await db.EventOccurrences
             .Include(o => o.Event)
             .Include(o => o.Contributors)
             .Include(o => o.Signups)
@@ -553,30 +577,32 @@ public class EventService : IEventService
         if (occurrence.Event.OwnerUserId != userId)
             return (false, "Only the event owner can toggle lightning talks.");
 
-        var owner = await _db.Users.FindAsync(occurrence.Event.OwnerUserId);
+        var owner = await db.Users.FindAsync(occurrence.Event.OwnerUserId);
+        var stateChanging = occurrence.IsLightningTalks != isLightningTalks;
 
-        if (isLightningTalks)
+        if (stateChanging)
         {
-            // Remove contributors when switching to lightning talks
-            _db.OccurrenceContributors.RemoveRange(occurrence.Contributors);
-        }
-        else
-        {
-            // Remove signups when switching off lightning talks
-            _db.EventSignups.RemoveRange(occurrence.Signups);
-        }
+            if (isLightningTalks)
+            {
+                db.OccurrenceContributors.RemoveRange(occurrence.Contributors);
+            }
+            else
+            {
+                db.EventSignups.RemoveRange(occurrence.Signups);
+            }
 
-        // Cancel existing Teams meeting if any
-        if (occurrence.GraphEventId is not null)
-        {
-            await _calendarService.CancelMeetingAsync(occurrence.GraphEventId, owner!);
-            occurrence.GraphEventId = null;
+            if (occurrence.GraphEventId is not null)
+            {
+                await _calendarService.CancelMeetingAsync(occurrence.GraphEventId, owner!);
+                occurrence.GraphEventId = null;
+            }
+
+            occurrence.NameSuffix = isLightningTalks ? "Lightning Talks" : null;
         }
 
         occurrence.IsLightningTalks = isLightningTalks;
         occurrence.LightningTalksCapacity = isLightningTalks ? capacity : null;
-        occurrence.NameSuffix = isLightningTalks ? "Lightning Talks" : null;
-        await _db.SaveChangesAsync();
+        await db.SaveChangesAsync();
 
         _notifier.Notify();
         return (true, null);
@@ -584,7 +610,9 @@ public class EventService : IEventService
 
     public async Task<(bool Success, string? Error)> UpdateOccurrenceNameAsync(int occurrenceId, int userId, string? namePrefix, string? nameSuffix)
     {
-        var occurrence = await _db.EventOccurrences
+        await using var db = await _dbFactory.CreateDbContextAsync();
+
+        var occurrence = await db.EventOccurrences
             .Include(o => o.Event)
             .Include(o => o.Contributors)
             .FirstOrDefaultAsync(o => o.Id == occurrenceId);
@@ -613,7 +641,7 @@ public class EventService : IEventService
             occurrence.NameSuffix = nameSuffix;
         }
 
-        await _db.SaveChangesAsync();
+        await db.SaveChangesAsync();
 
         _notifier.Notify();
         return (true, null);
@@ -623,7 +651,9 @@ public class EventService : IEventService
 
     public async Task<(bool Success, string? Error)> SetReminderDefinitionsAsync(int eventId, int userId, List<string> reminderNames)
     {
-        var evt = await _db.Events
+        await using var db = await _dbFactory.CreateDbContextAsync();
+
+        var evt = await db.Events
             .Include(e => e.ReminderDefinitions)
             .FirstOrDefaultAsync(e => e.Id == eventId);
 
@@ -648,7 +678,7 @@ public class EventService : IEventService
         // Diff: keep existing by name, remove missing, add new
         var existingByName = evt.ReminderDefinitions.ToDictionary(d => d.Name, StringComparer.OrdinalIgnoreCase);
         var toRemove = evt.ReminderDefinitions.Where(d => !reminderNames.Contains(d.Name, StringComparer.OrdinalIgnoreCase)).ToList();
-        _db.EventReminderDefinitions.RemoveRange(toRemove);
+        db.EventReminderDefinitions.RemoveRange(toRemove);
 
         for (var i = 0; i < reminderNames.Count; i++)
         {
@@ -658,7 +688,7 @@ public class EventService : IEventService
             }
             else
             {
-                _db.EventReminderDefinitions.Add(new EventReminderDefinition
+                db.EventReminderDefinitions.Add(new EventReminderDefinition
                 {
                     EventId = eventId,
                     Name = reminderNames[i],
@@ -667,14 +697,16 @@ public class EventService : IEventService
             }
         }
 
-        await _db.SaveChangesAsync();
+        await db.SaveChangesAsync();
         _notifier.Notify();
         return (true, null);
     }
 
     public async Task<(bool Success, string? Error)> SetReminderValueAsync(int occurrenceId, int userId, int reminderDefinitionId, bool value)
     {
-        var occurrence = await _db.EventOccurrences
+        await using var db = await _dbFactory.CreateDbContextAsync();
+
+        var occurrence = await db.EventOccurrences
             .Include(o => o.Event)
             .Include(o => o.ReminderValues)
             .FirstOrDefaultAsync(o => o.Id == occurrenceId);
@@ -692,7 +724,7 @@ public class EventService : IEventService
         }
         else
         {
-            _db.OccurrenceReminderValues.Add(new OccurrenceReminderValue
+            db.OccurrenceReminderValues.Add(new OccurrenceReminderValue
             {
                 EventOccurrenceId = occurrenceId,
                 ReminderDefinitionId = reminderDefinitionId,
@@ -700,7 +732,7 @@ public class EventService : IEventService
             });
         }
 
-        await _db.SaveChangesAsync();
+        await db.SaveChangesAsync();
         _notifier.Notify();
         return (true, null);
     }

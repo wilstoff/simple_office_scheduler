@@ -237,9 +237,9 @@ public class AdjustScheduleTests : IntegrationTestBase
         var pastStart = LocalDateTime.FromDateTime(DateTime.Now.Date.AddDays(-7).AddHours(9));
         var pastEnd = pastStart.PlusHours(1);
 
-        using (var scope = Factory.Services.CreateScope())
         {
-            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var dbFactory = Factory.Services.GetRequiredService<IDbContextFactory<AppDbContext>>();
+            await using var db = await dbFactory.CreateDbContextAsync();
             db.EventOccurrences.Add(new EventOccurrence
             {
                 EventId = evt.Id,
@@ -268,9 +268,9 @@ public class AdjustScheduleTests : IntegrationTestBase
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         // Verify the past occurrence is still present with its original time
-        using (var scope = Factory.Services.CreateScope())
         {
-            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var dbFactory = Factory.Services.GetRequiredService<IDbContextFactory<AppDbContext>>();
+            await using var db = await dbFactory.CreateDbContextAsync();
             var allOccurrences = await db.EventOccurrences
                 .Where(o => o.EventId == evt.Id)
                 .ToListAsync();

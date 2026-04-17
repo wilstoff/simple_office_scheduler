@@ -8,21 +8,23 @@ namespace SimpleOfficeScheduler.Services.Auth;
 
 public class LdapAuthService : IAuthenticationService
 {
-    private readonly AppDbContext _db;
+    private readonly IDbContextFactory<AppDbContext> _dbFactory;
     private readonly ActiveDirectorySettings _adSettings;
     private readonly ILogger<LdapAuthService> _logger;
 
-    public LdapAuthService(AppDbContext db, IOptions<ActiveDirectorySettings> adSettings, ILogger<LdapAuthService> logger)
+    public LdapAuthService(IDbContextFactory<AppDbContext> dbFactory, IOptions<ActiveDirectorySettings> adSettings, ILogger<LdapAuthService> logger)
     {
-        _db = db;
+        _dbFactory = dbFactory;
         _adSettings = adSettings.Value;
         _logger = logger;
     }
 
     public async Task<AuthResult> ValidateAsync(string username, string password)
     {
+        await using var db = await _dbFactory.CreateDbContextAsync();
+
         // First try local account (for seeded test user even when AD is enabled)
-        var localUser = await _db.Users.FirstOrDefaultAsync(u => u.Username == username && u.IsLocalAccount);
+        var localUser = await db.Users.FirstOrDefaultAsync(u => u.Username == username && u.IsLocalAccount);
         if (localUser is not null && !string.IsNullOrEmpty(localUser.PasswordHash))
         {
             if (BCrypt.Net.BCrypt.Verify(password, localUser.PasswordHash))
@@ -73,7 +75,7 @@ public class LdapAuthService : IAuthenticationService
             }
 
             // Upsert user in local database
-            var user = await _db.Users.FirstOrDefaultAsync(u => u.Username == username && !u.IsLocalAccount);
+            var user = await db.Users.FirstOrDefaultAsync(u => u.Username == username && !u.IsLocalAccount);
             if (user is null)
             {
                 user = new AppUser
@@ -84,7 +86,7 @@ public class LdapAuthService : IAuthenticationService
                     IsLocalAccount = false,
                     CreatedAt = NodaTime.SystemClock.Instance.GetCurrentInstant()
                 };
-                _db.Users.Add(user);
+                db.Users.Add(user);
             }
             else
             {
@@ -92,7 +94,7 @@ public class LdapAuthService : IAuthenticationService
                 user.Email = email;
             }
 
-            await _db.SaveChangesAsync();
+            await db.SaveChangesAsync();
             return AuthResult.Succeeded(user);
         }
         catch (LdapException ex)

@@ -60,8 +60,8 @@ public class PlaywrightWebAppFixture : IAsyncLifetime
         // Allow subclasses to override DI services (e.g., replace IClock with FakeClock)
         ConfigureTestServices(builder.Services);
 
-        // Database (test SQLite)
-        builder.Services.AddDbContext<AppDbContext>(options =>
+        // Database (test SQLite) — factory pattern matches production registration
+        builder.Services.AddDbContextFactory<AppDbContext>(options =>
             options.UseSqlite($"Data Source={_dbPath}",
                 o => o.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery)));
 
@@ -117,8 +117,8 @@ public class PlaywrightWebAppFixture : IAsyncLifetime
         BaseUrl = _app.Urls.First().TrimEnd('/');
 
         // Seed DB
-        using var scope = _app.Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var dbFactory = _app.Services.GetRequiredService<IDbContextFactory<AppDbContext>>();
+        await using var db = await dbFactory.CreateDbContextAsync();
         await db.Database.EnsureCreatedAsync();
 
         if (!await db.Users.AnyAsync(u => u.Username == "testadmin"))
