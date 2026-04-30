@@ -38,18 +38,12 @@ public class StaticAssetTests : IAsyncLifetime
         await _factory.DisposeAsync();
     }
 
-    [Fact]
-    public async Task FullCalendarJs_Returns200()
+    [Theory]
+    [InlineData("/js/fullcalendar-interop.js")]
+    [InlineData("/app.css")]
+    public async Task AppStaticAsset_Returns200(string path)
     {
-        var response = await _client.GetAsync("/js/fullcalendar-interop.js");
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task AppCss_Returns200()
-    {
-        var response = await _client.GetAsync("/app.css");
+        var response = await _client.GetAsync(path);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
