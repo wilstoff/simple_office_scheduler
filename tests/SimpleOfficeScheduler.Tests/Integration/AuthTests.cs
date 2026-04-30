@@ -23,25 +23,15 @@ public class AuthTests : IntegrationTestBase
         Assert.Equal("Test Admin", user.DisplayName);
     }
 
-    [Fact]
-    public async Task Login_WrongPassword_Returns401()
+    [Theory]
+    [InlineData(TestUsername, "WrongPassword")]
+    [InlineData("nobody", "anything")]
+    public async Task Login_InvalidCredentials_Returns401(string username, string password)
     {
         var response = await Client.PostAsJsonAsync("/api/auth/login", new
         {
-            username = TestUsername,
-            password = "WrongPassword"
-        });
-
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task Login_NonExistentUser_Returns401()
-    {
-        var response = await Client.PostAsJsonAsync("/api/auth/login", new
-        {
-            username = "nobody",
-            password = "anything"
+            username,
+            password
         });
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
