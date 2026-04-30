@@ -31,6 +31,10 @@ public class LdapAuthService : IAuthenticationService
                 return AuthResult.Succeeded(localUser);
         }
 
+        // Strip "@domain.tld" if it matches the configured SearchBase, so users
+        // can sign in with either "john" or "john@abc.com".
+        var bindUsername = UsernameNormalizer.NormalizeForLdapBind(username, _adSettings.SearchBase);
+
         // Try LDAP bind
         try
         {
@@ -42,19 +46,19 @@ public class LdapAuthService : IAuthenticationService
 
             await connection.ConnectAsync(_adSettings.Host, _adSettings.Port);
 
-            var bindDn = $"{_adSettings.Domain}\\{username}";
+            var bindDn = $"{_adSettings.Domain}\\{bindUsername}";
             await connection.BindAsync(bindDn, password);
 
             // Search for user attributes
-            string displayName = username;
-            string email = $"{username}@{_adSettings.Domain.ToLower()}";
+            string displayName = bindUsername;
+            string email = $"{bindUsername}@{_adSettings.Domain.ToLower()}";
 
             try
             {
                 var searchResults = await connection.SearchAsync(
                     _adSettings.SearchBase,
                     LdapConnection.ScopeSub,
-                    $"(sAMAccountName={EscapeLdapFilter(username)})",
+                    $"(sAMAccountName={EscapeLdapFilter(bindUsername)})",
                     new[] { "displayName", "mail" },
                     false
                 );
@@ -71,16 +75,16 @@ public class LdapAuthService : IAuthenticationService
             }
             catch (LdapException ex)
             {
-                _logger.LogWarning(ex, "Could not query AD attributes for user '{Username}', using defaults.", username);
+                _logger.LogWarning(ex, "Could not query AD attributes for user '{Username}', using defaults.", bindUsername);
             }
 
             // Upsert user in local database
-            var user = await db.Users.FirstOrDefaultAsync(u => u.Username == username && !u.IsLocalAccount);
+            var user = await db.Users.FirstOrDefaultAsync(u => u.Username == bindUsername && !u.IsLocalAccount);
             if (user is null)
             {
                 user = new AppUser
                 {
-                    Username = username,
+                    Username = bindUsername,
                     DisplayName = displayName,
                     Email = email,
                     IsLocalAccount = false,
