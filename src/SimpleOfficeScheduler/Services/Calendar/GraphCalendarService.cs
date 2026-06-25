@@ -207,4 +207,17 @@ public class GraphCalendarService : ICalendarInviteService
         _logger.LogInformation("Updated attendees for Teams meeting {GraphEventId} with {Count} contributors",
             graphEventId, contributors.Count);
     }
+
+    public async Task UpdateMeetingSubjectAsync(string graphEventId, string subject)
+    {
+        var targetEmail = _settings.TargetMailbox;
+
+        await _graphClient.Users[targetEmail].Events[graphEventId].PatchAsync(new GraphEvent
+        {
+            Subject = subject
+        });
+
+        _logger.LogInformation("Updated subject for Teams meeting {GraphEventId} to '{Subject}'",
+            graphEventId, subject);
+    }
 }

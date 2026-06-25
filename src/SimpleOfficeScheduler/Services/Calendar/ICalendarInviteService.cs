@@ -10,4 +10,5 @@ public interface ICalendarInviteService
     Task CancelMeetingAsync(string graphEventId, AppUser owner);
     Task<string> CreateMeetingForContributorsAsync(EventOccurrence occurrence, AppUser owner, IReadOnlyList<AppUser> contributors);
     Task UpdateMeetingAttendeesAsync(string graphEventId, AppUser owner, IReadOnlyList<AppUser> contributors);
+    Task UpdateMeetingSubjectAsync(string graphEventId, string subject);
 }
