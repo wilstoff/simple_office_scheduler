@@ -59,6 +59,13 @@ public class NoOpCalendarService : ICalendarInviteService
         return Task.CompletedTask;
     }
 
+    public Task UpdateMeetingSubjectAsync(string graphEventId, string subject)
+    {
+        _logger.LogInformation("DEV: Would update subject for meeting {GraphEventId} to '{Subject}'",
+            graphEventId, subject);
+        return Task.CompletedTask;
+    }
+
     private void LogSignupTopics(IReadOnlyList<EventSignup> signups)
     {
         foreach (var s in signups.Where(s => !string.IsNullOrWhiteSpace(s.Message)))

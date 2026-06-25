@@ -643,6 +643,12 @@ public class EventService : IEventService
 
         await db.SaveChangesAsync();
 
+        // Keep the existing Teams meeting subject in sync with the new topic/name.
+        if (occurrence.GraphEventId is not null)
+        {
+            await _calendarService.UpdateMeetingSubjectAsync(occurrence.GraphEventId, occurrence.DisplayName);
+        }
+
         _notifier.Notify();
         return (true, null);
     }

@@ -1541,6 +1541,36 @@ public class EventServiceTests : IDisposable
         Assert.Contains("owner", error!, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task UpdateOccurrenceName_WithExistingMeeting_UpdatesTeamsMeetingSubject()
+    {
+        var owner = await SeedOwnerAsync();
+        var contributor = await SeedUserAsync("contributor1");
+        _calendarMock
+            .Setup(c => c.CreateMeetingForContributorsAsync(
+                It.IsAny<EventOccurrence>(), It.IsAny<AppUser>(), It.IsAny<IReadOnlyList<AppUser>>()))
+            .ReturnsAsync("graph-contrib-id");
+
+        var evt = await _sut.CreateEventAsync(
+            MakeSingleEvent(owner.Id, title: "Tech Meeting", eventType: EventType.TechMeeting), owner.Id);
+        var occurrenceId = (await _db.EventOccurrences.FirstAsync(o => o.EventId == evt.Id)).Id;
+
+        // Assign a contributor so a Teams meeting exists for this occurrence
+        await _sut.SetContributorsAsync(occurrenceId, owner.Id, new List<int> { contributor.Id });
+
+        // Change the topic (suffix) of the tech meeting
+        var (success, error) = await _sut.UpdateOccurrenceNameAsync(occurrenceId, contributor.Id, null, "GraphQL Deep Dive");
+
+        Assert.True(success);
+        Assert.Null(error);
+
+        // The existing Teams meeting subject should be updated to match the new DisplayName
+        _calendarMock.Verify(c => c.UpdateMeetingSubjectAsync(
+            "graph-contrib-id",
+            "Tech Meeting: GraphQL Deep Dive"),
+            Times.Once);
+    }
+
     // ── TechMeeting: Reminders ──────────────────────────────────────
 
     [Fact]
