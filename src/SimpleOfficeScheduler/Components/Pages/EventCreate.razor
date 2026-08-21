@@ -5,6 +5,8 @@
 @using SimpleOfficeScheduler.Services
 @using SimpleOfficeScheduler.Services.Users
 @inject IUserSearchService UserSearchService
+@using SimpleOfficeScheduler.Services.Rooms
+@inject IRoomService RoomService
 @inject IEventService EventService
 @inject AuthenticationStateProvider AuthStateProvider
 @inject NavigationManager Navigation
@@ -126,6 +128,43 @@
                 </button>
             </div>
 
+
+            <div class="mb-3">
+                <label class="form-label">Room</label>
+                <div class="d-flex gap-1">
+                    <InputSelect class="form-select" @bind-Value="_model.RoomEmail">
+                        <option value="">No room</option>
+                        @foreach (var room in _rooms)
+                        {
+                            <option value="@room.Email">@RoomLabel(room)</option>
+                        }
+                    </InputSelect>
+                    <button type="button" class="btn btn-outline-secondary text-nowrap"
+                            disabled="@_checkingAvailability"
+                            @onclick="CheckRoomAvailability">
+                        @(_checkingAvailability ? "Checking..." : "Check free/busy")
+                    </button>
+                </div>
+                @if (_rooms.Count == 0)
+                {
+                    <small class="text-muted">No rooms are configured.</small>
+                }
+                else if (_availabilityUnavailable)
+                {
+                    <small class="text-muted">
+                        Free/busy is not available for these rooms. Booking still works; the room
+                        confirms or declines after the event is saved.
+                    </small>
+                }
+                else if (_roomBusy.Count > 0)
+                {
+                    <small class="text-muted">
+                        Free/busy shown for @_availabilityStart.ToString("MMM dd h:mm tt", null)
+                        to @_availabilityEnd.ToString("h:mm tt", null).
+                    </small>
+                }
+            </div>
+
             <div class="mb-3">
                 <label for="capacity" class="form-label">Capacity</label>
                 <InputNumber id="capacity" class="form-control" @bind-Value="_model.Capacity" min="1" />
@@ -242,6 +281,7 @@
     protected override async Task OnInitializedAsync()
     {
         _timeZones = TimeZoneHelper.GetCommonTimeZones();
+        _rooms = (await RoomService.GetRoomsAsync()).ToList();
 
         // If _model was populated from a form POST ([SupplyParameterFromForm]), skip initialization
         if (_model is not null)
@@ -259,6 +299,10 @@
             }
 
             _model.Title = evt.Title;
+            _model.RoomEmail = evt.RoomEmail;
+            _model.CoOwners = evt.CoOwners
+                .Select(o => new CoOwnerChoice(o.UserId, o.User?.DisplayName ?? ""))
+                .ToList();
             _model.Description = evt.Description;
             _model.StartTime = evt.StartTime.ToDateTimeUnspecified();
             _model.EndTime = evt.EndTime.ToDateTimeUnspecified();
@@ -347,7 +391,8 @@
             EndTime = LocalDateTime.FromDateTime(_model.EndTime),
             Capacity = _model.Capacity,
             TimeZoneId = _model.TimeZoneId,
-            EventType = _model.EventType
+            EventType = _model.EventType,
+            RoomEmail = _model.RoomEmail
         };
 
         if (_model.IsRecurring)
@@ -369,7 +414,20 @@
             var (success, error) = await EventService.UpdateEventAsync(evt, userId);
             if (success)
             {
-                Navigation.NavigateTo($"events/{EventId}");
+                // UpdateEventAsync deliberately leaves the room and co-owners alone.
+                var (roomOk, roomError) = await EventService.SetRoomAsync(
+                    EventId!.Value, userId, _model.RoomEmail);
+                var (coOwnerOk, coOwnerError) = await EventService.SetCoOwnersAsync(
+                    EventId.Value, userId, _model.CoOwners.Select(c => c.UserId).ToList());
+
+                if (!roomOk || !coOwnerOk)
+                {
+                    _errorMessage = roomError ?? coOwnerError;
+                }
+                else
+                {
+                    Navigation.NavigateTo($"events/{EventId}");
+                }
             }
             else
             {
@@ -391,6 +449,65 @@
         }
 
         _isSubmitting = false;
+    }
+
+    private List<SimpleOfficeScheduler.Models.Room> _rooms = new();
+    private readonly Dictionary<string, bool> _roomBusy = new(StringComparer.OrdinalIgnoreCase);
+    private bool _availabilityUnavailable;
+    private bool _checkingAvailability;
+    private DateTime _availabilityStart;
+    private DateTime _availabilityEnd;
+
+    private string RoomLabel(SimpleOfficeScheduler.Models.Room room)
+    {
+        var parts = new List<string> { room.DisplayName };
+        if (room.Capacity is int cap) parts.Add($"seats {cap}");
+        if (!string.IsNullOrWhiteSpace(room.Building)) parts.Add(room.Building!);
+
+        // Capacity is informational: the owning team is on the meeting on top of any sign-ups.
+        var label = string.Join(" · ", parts);
+        if (_roomBusy.TryGetValue(room.Email, out var busy))
+            label += busy ? "  (busy)" : "  (free)";
+        return label;
+    }
+
+    private async Task CheckRoomAvailability()
+    {
+        if (_rooms.Count == 0) return;
+
+        _checkingAvailability = true;
+        _availabilityUnavailable = false;
+        _roomBusy.Clear();
+        _availabilityStart = _model.StartTime;
+        _availabilityEnd = _model.EndTime;
+
+        try
+        {
+            var availability = await RoomService.GetAvailabilityAsync(
+                _rooms.Select(r => r.Email).ToList(),
+                LocalDateTime.FromDateTime(_model.StartTime),
+                LocalDateTime.FromDateTime(_model.EndTime),
+                _model.TimeZoneId);
+
+            // Null means the data could not be read, which is not the same as every room being free.
+            if (availability is null)
+            {
+                _availabilityUnavailable = true;
+            }
+            else
+            {
+                foreach (var a in availability)
+                    _roomBusy[a.Email] = a.IsBusy;
+            }
+        }
+        catch
+        {
+            _availabilityUnavailable = true;
+        }
+        finally
+        {
+            _checkingAvailability = false;
+        }
     }
 
     private record CoOwnerChoice(int UserId, string DisplayName);
@@ -432,6 +549,7 @@
         public string TimeZoneId { get; set; } = string.Empty;
         public EventType EventType { get; set; } = EventType.OfficeHours;
         public List<CoOwnerChoice> CoOwners { get; set; } = new();
+        public string? RoomEmail { get; set; }
         public bool IsRecurring { get; set; }
         public RecurrenceType RecurrenceType { get; set; } = RecurrenceType.Weekly;
         public int Interval { get; set; } = 1;

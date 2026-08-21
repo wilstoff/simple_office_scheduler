@@ -16,6 +16,7 @@ using SimpleOfficeScheduler.Services.Events;
 using SimpleOfficeScheduler.Services;
 using SimpleOfficeScheduler.Services.Ldap;
 using SimpleOfficeScheduler.Services.Recurrence;
+using SimpleOfficeScheduler.Services.Rooms;
 using SimpleOfficeScheduler.Services.Users;
 
 namespace SimpleOfficeScheduler.Tests;
@@ -49,7 +50,15 @@ public class PlaywrightWebAppFixture : IAsyncLifetime
 
         // Configuration options (defaults are fine for testing)
         builder.Services.Configure<ActiveDirectorySettings>(_ => { });
-        builder.Services.Configure<GraphApiSettings>(_ => { });
+        builder.Services.Configure<GraphApiSettings>(o =>
+        {
+            // Graph is not configured here, so rooms come from this list via ConfigRoomService.
+            o.Rooms = new List<ConfiguredRoom>
+            {
+                new() { Email = "room-a@test.local", DisplayName = "Test Room A", Capacity = 8 },
+                new() { Email = "room-b@test.local", DisplayName = "Test Room B", Capacity = 20 }
+            };
+        });
         builder.Services.Configure<SeedUserSettings>(_ => { });
         builder.Services.Configure<RecurrenceSettings>(_ => { });
         builder.Services.Configure<TimezoneSettings>(_ => { });
@@ -86,6 +95,8 @@ public class PlaywrightWebAppFixture : IAsyncLifetime
 
         // Application services
         builder.Services.AddScoped<ICalendarInviteService, NoOpCalendarService>();
+        builder.Services.AddSingleton<ConfigRoomService>();
+        builder.Services.AddSingleton<IRoomService>(sp => sp.GetRequiredService<ConfigRoomService>());
         builder.Services.AddScoped<RecurrenceExpander>();
         builder.Services.AddScoped<IEventService, EventService>();
         builder.Services.AddScoped<IUserSearchService, UserSearchService>();

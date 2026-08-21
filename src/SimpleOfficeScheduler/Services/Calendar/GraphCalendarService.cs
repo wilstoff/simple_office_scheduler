@@ -5,6 +5,7 @@ using Microsoft.Graph.Models;
 using NodaTime;
 using SimpleOfficeScheduler.Models;
 using AppEvent = SimpleOfficeScheduler.Models.Event;
+using AppRoom = SimpleOfficeScheduler.Models.Room;
 using GraphEvent = Microsoft.Graph.Models.Event;
 
 namespace SimpleOfficeScheduler.Services.Calendar;
@@ -225,6 +226,24 @@ public class GraphCalendarService : ICalendarInviteService
 
     // ── Recurring series (workshops) ────────────────────────────────
 
+    /// <summary>
+    /// A room is booked by adding its mailbox as a resource attendee and naming it as the location.
+    /// This needs no permission beyond the Calendars.ReadWrite the app already has on the target
+    /// mailbox; the room's own booking attendant decides whether to accept.
+    /// </summary>
+    private static Attendee ResourceAttendee(AppRoom room) => new()
+    {
+        EmailAddress = new EmailAddress { Address = room.Email, Name = room.DisplayName },
+        Type = AttendeeType.Resource
+    };
+
+    private static Location RoomLocation(AppRoom room) => new()
+    {
+        DisplayName = room.DisplayName,
+        LocationEmailAddress = room.Email,
+        LocationType = LocationType.ConferenceRoom
+    };
+
     private static List<Attendee> RequiredAttendees(IEnumerable<AppUser> users) =>
         users.Select(u => new Attendee
         {
@@ -232,7 +251,7 @@ public class GraphCalendarService : ICalendarInviteService
             Type = AttendeeType.Required
         }).ToList();
 
-    public async Task<string> CreateSeriesAsync(AppEvent evt, IReadOnlyList<AppUser> owners, LocalDate windowEnd)
+    public async Task<string> CreateSeriesAsync(AppEvent evt, IReadOnlyList<AppUser> owners, LocalDate windowEnd, AppRoom? room)
     {
         var targetEmail = _settings.TargetMailbox;
 
@@ -261,6 +280,12 @@ public class GraphCalendarService : ICalendarInviteService
             OnlineMeetingProvider = OnlineMeetingProviderType.TeamsForBusiness,
             Attendees = RequiredAttendees(owners)
         };
+
+        if (room is not null)
+        {
+            graphEvent.Attendees!.Add(ResourceAttendee(room));
+            graphEvent.Location = RoomLocation(room);
+        }
 
         var created = await _graphClient.Users[targetEmail].Events.PostAsync(graphEvent);
         _logger.LogInformation("Created Teams series {GraphEventId} for workshop '{Title}' with {Count} owners through {WindowEnd}",
@@ -335,6 +360,64 @@ public class GraphCalendarService : ICalendarInviteService
 
         _logger.LogInformation("Patched attendees on Teams series instance {InstanceId}: {OwnerCount} owners, {SignupCount} signups",
             instanceId, owners.Count, signups.Count);
+    }
+
+    public async Task UpdateSeriesRoomAsync(string graphSeriesId, AppRoom? room)
+    {
+        var targetEmail = _settings.TargetMailbox;
+
+        var existing = await _graphClient.Users[targetEmail].Events[graphSeriesId].GetAsync();
+        if (existing is null) return;
+
+        // Drop any previous resource attendee, then add the new one.
+        var attendees = (existing.Attendees ?? new List<Attendee>())
+            .Where(a => a.Type != AttendeeType.Resource)
+            .ToList();
+
+        if (room is not null)
+            attendees.Add(ResourceAttendee(room));
+
+        await _graphClient.Users[targetEmail].Events[graphSeriesId].PatchAsync(new GraphEvent
+        {
+            Attendees = attendees,
+            Location = room is not null ? RoomLocation(room) : new Location { DisplayName = "" }
+        });
+
+        _logger.LogInformation("Set room on Teams series {GraphEventId} to {Room}",
+            graphSeriesId, room?.Email ?? "(none)");
+    }
+
+    public async Task<RoomBookingOutcome?> GetRoomResponseAsync(string graphEventId, string roomEmail)
+    {
+        var targetEmail = _settings.TargetMailbox;
+
+        var existing = await _graphClient.Users[targetEmail].Events[graphEventId].GetAsync();
+        var resource = existing?.Attendees?.FirstOrDefault(a =>
+            string.Equals(a.EmailAddress?.Address, roomEmail, StringComparison.OrdinalIgnoreCase));
+
+        if (resource is null)
+        {
+            return new RoomBookingOutcome
+            {
+                Status = RoomBookingStatus.Failed,
+                Error = "The room is not on the meeting."
+            };
+        }
+
+        return resource.Status?.Response switch
+        {
+            ResponseType.Accepted or ResponseType.TentativelyAccepted =>
+                new RoomBookingOutcome { Status = RoomBookingStatus.Booked },
+            ResponseType.Declined =>
+                new RoomBookingOutcome
+                {
+                    Status = RoomBookingStatus.Declined,
+                    Error = "The room declined the booking. It is most likely already reserved, or "
+                        + "the date is outside its booking window."
+                },
+            // NotResponded / None: the booking attendant has not replied yet.
+            _ => null
+        };
     }
 
     public async Task UpdateSeriesOwnersAsync(string graphSeriesId, IReadOnlyList<AppUser> owners)

@@ -75,6 +75,8 @@ function createAndRenderCalendar(
                     isCancelled: props['isCancelled'],
                     owner: props['owner'],
                     timeZoneId: props['timeZoneId'],
+                    room: props['room'] || '',
+                    roomBookingStatus: props['roomBookingStatus'] || '',
                     url: info.event.url || ''
                 })
             );
@@ -140,7 +142,13 @@ function createAndRenderCalendar(
             const timeRange = arg.event.start
                 ? `${fmt12(arg.event.start)}${arg.event.end ? ' - ' + fmt12(arg.event.end) : ''}`
                 : '';
-            const tooltip = `${arg.event.title}\n${timeRange}\n${detailText}`;
+            const room = props?.['room'] as string || '';
+            const roomStatus = props?.['roomBookingStatus'] as string || '';
+            // Flag a room that did not take the booking, so the tooltip does not imply it is held.
+            const roomLine = room
+                ? `\n${room}${roomStatus === 'Declined' || roomStatus === 'Failed' ? ' (not booked)' : ''}`
+                : '';
+            const tooltip = `${arg.event.title}\n${timeRange}\n${detailText}${roomLine}`;
 
             return {
                 html: `

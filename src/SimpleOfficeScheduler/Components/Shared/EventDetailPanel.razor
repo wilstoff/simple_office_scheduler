@@ -57,6 +57,25 @@
                     <span style="color: var(--text-muted);">Timezone</span>
                     <span>@_event.TimeZoneId</span>
                 </div>
+                @if (!string.IsNullOrEmpty(_event.RoomDisplayName))
+                {
+                    <div class="d-flex justify-content-between mb-1">
+                        <span style="color: var(--text-muted);">Room</span>
+                        <span>
+                            @_event.RoomDisplayName
+                            @if (_selectedOccurrence?.RoomBookingStatus is RoomBookingStatus.Declined
+                                or RoomBookingStatus.Failed)
+                            {
+                                <span class="badge bg-warning ms-1"
+                                      title="@_selectedOccurrence.RoomBookingError">not booked</span>
+                            }
+                            else if (_selectedOccurrence?.RoomBookingStatus == RoomBookingStatus.Pending)
+                            {
+                                <span class="badge bg-secondary ms-1">pending</span>
+                            }
+                        </span>
+                    </div>
+                }
                 @if (!_isTechMeeting || _isLightningTalks)
                 {
                     <div class="d-flex justify-content-between mb-1">

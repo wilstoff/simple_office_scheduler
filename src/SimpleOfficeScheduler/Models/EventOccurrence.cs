@@ -14,6 +14,14 @@ public class EventOccurrence
     public string? GraphEventId { get; set; }
     public bool IsLightningTalks { get; set; }
     public int? LightningTalksCapacity { get; set; }
+    /// <summary>
+    /// Outcome of the room booking for this occurrence. Per occurrence rather than per event
+    /// because a room mailbox responds per instance for series exceptions, so a single date can be
+    /// declined while the rest of the series holds.
+    /// </summary>
+    public RoomBookingStatus RoomBookingStatus { get; set; }
+    public string? RoomBookingError { get; set; }
+
     public string? NamePrefix { get; set; }
     public string? NameSuffix { get; set; }
 

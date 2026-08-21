@@ -45,6 +45,15 @@ public class RecurrenceExpansionBackgroundService : BackgroundService
                 _logger.LogError(ex, "Error extending workshop series ranges.");
             }
 
+            try
+            {
+                await RefreshRoomBookings(stoppingToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error refreshing room booking status.");
+            }
+
             await Task.Delay(TimeSpan.FromHours(_settings.ExpansionCheckIntervalHours), stoppingToken);
         }
     }
@@ -57,6 +66,16 @@ public class RecurrenceExpansionBackgroundService : BackgroundService
         var extended = await eventService.ExtendExpiringWorkshopSeriesAsync(ct);
         if (extended > 0)
             _logger.LogInformation("Extended the Graph series range for {Count} workshops.", extended);
+    }
+
+    private async Task RefreshRoomBookings(CancellationToken ct)
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var eventService = scope.ServiceProvider.GetRequiredService<IEventService>();
+
+        var changed = await eventService.RefreshRoomBookingStatusAsync(ct);
+        if (changed > 0)
+            _logger.LogInformation("Updated the room booking status for {Count} occurrences.", changed);
     }
 
     private async Task ExpandRecurringEvents(CancellationToken ct)

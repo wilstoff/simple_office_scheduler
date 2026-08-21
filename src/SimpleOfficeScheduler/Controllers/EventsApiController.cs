@@ -70,7 +70,9 @@ public class EventsApiController : ControllerBase
                     contributors = o.Contributors?.Select(c => c.User.DisplayName).ToList() ?? new List<string>(),
                     owners = new[] { o.Event.Owner.DisplayName }
                         .Concat(o.Event.CoOwners?.Select(co => co.User.DisplayName) ?? Enumerable.Empty<string>())
-                        .ToList()
+                        .ToList(),
+                    room = o.Event.RoomDisplayName,
+                    roomBookingStatus = o.RoomBookingStatus.ToString()
                 }
             };
         });
@@ -108,6 +110,7 @@ public class EventsApiController : ControllerBase
             Capacity = request.Capacity,
             TimeZoneId = request.TimeZoneId ?? TimeZoneHelper.GetLocalTimeZoneId(),
             EventType = request.EventType,
+            RoomEmail = request.RoomEmail,
             Recurrence = request.Recurrence is not null ? new RecurrencePattern
             {
                 Type = request.Recurrence.Type,
@@ -237,6 +240,16 @@ public class EventsApiController : ControllerBase
         return Ok();
     }
 
+    [HttpPost("{id:int}/room")]
+    [Authorize]
+    public async Task<IActionResult> SetRoom(int id, [FromBody] SetRoomRequest request)
+    {
+        var (success, error) = await _eventService.SetRoomAsync(id, GetUserId(), request.RoomEmail);
+        if (!success) return BadRequest(new { error });
+
+        return Ok();
+    }
+
     // ── Tech Meeting Endpoints ──────────────────────────────────────
 
     [HttpPost("occurrences/{occurrenceId:int}/contributors")]
@@ -313,6 +326,8 @@ public class EventsApiController : ControllerBase
             RecurrenceEndDate = evt.Recurrence.RecurrenceEndDate,
             MaxOccurrences = evt.Recurrence.MaxOccurrences
         } : null,
+        RoomEmail = evt.RoomEmail,
+        RoomDisplayName = evt.RoomDisplayName,
         CoOwners = evt.CoOwners?.Select(o => new CoOwnerResponse
         {
             UserId = o.UserId,
@@ -345,6 +360,8 @@ public class EventsApiController : ControllerBase
                 NamePrefix = o.NamePrefix,
                 NameSuffix = o.NameSuffix,
                 DisplayName = o.DisplayName,
+                RoomBookingStatus = o.RoomBookingStatus,
+                RoomBookingError = o.RoomBookingError,
                 SignupCount = o.Signups?.Count ?? 0,
                 Signups = o.Signups?.Select(s => new SignupResponse
                 {

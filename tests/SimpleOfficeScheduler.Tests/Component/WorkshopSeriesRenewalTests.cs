@@ -11,6 +11,7 @@ using SimpleOfficeScheduler.Services;
 using SimpleOfficeScheduler.Services.Calendar;
 using SimpleOfficeScheduler.Services.Events;
 using SimpleOfficeScheduler.Services.Recurrence;
+using SimpleOfficeScheduler.Services.Rooms;
 
 namespace SimpleOfficeScheduler.Tests;
 
@@ -44,7 +45,7 @@ public class WorkshopSeriesRenewalTests : IDisposable
 
         _calendarMock = new Mock<ICalendarInviteService>();
         _calendarMock
-            .Setup(c => c.CreateSeriesAsync(It.IsAny<Event>(), It.IsAny<IReadOnlyList<AppUser>>(), It.IsAny<LocalDate>()))
+            .Setup(c => c.CreateSeriesAsync(It.IsAny<Event>(), It.IsAny<IReadOnlyList<AppUser>>(), It.IsAny<LocalDate>(), It.IsAny<Room?>()))
             .ReturnsAsync("series-id");
 
         _clock = new FakeClock(Instant.FromUtc(2026, 3, 1, 12, 0));
@@ -53,6 +54,7 @@ public class WorkshopSeriesRenewalTests : IDisposable
             _dbFactory,
             new RecurrenceExpander(),
             _calendarMock.Object,
+            new ConfigRoomService(Options.Create(new GraphApiSettings()), NullLogger<ConfigRoomService>.Instance),
             Options.Create(new RecurrenceSettings { DefaultHorizonMonths = 6, ExpansionCheckIntervalHours = 24 }),
             Options.Create(new GraphApiSettings { RoomBookingWindowDays = WindowDays }),
             _clock,
@@ -145,6 +147,46 @@ public class WorkshopSeriesRenewalTests : IDisposable
         await using var db = _dbFactory.CreateDbContext();
         var stored = await db.Events.FirstAsync(e => e.Id == created.Id);
         Assert.Equal(Today.PlusDays(WindowDays), stored.GraphSeriesWindowEnd);
+    }
+
+    [Fact]
+    public async Task CreateWorkshop_PutsEachOwnerOnTheSeriesExactlyOnce()
+    {
+        // EF's relationship fixup already adds a new EventOwner to Event.CoOwners, so adding it by
+        // hand as well duplicated every co-owner on the meeting invite.
+        var owner = new AppUser
+        {
+            Username = "owner", DisplayName = "Owner", Email = "owner@test.local",
+            IsLocalAccount = true, CreatedAt = _clock.GetCurrentInstant()
+        };
+        var alice = new AppUser
+        {
+            Username = "alice", DisplayName = "Alice", Email = "alice@test.local",
+            IsLocalAccount = true, CreatedAt = _clock.GetCurrentInstant()
+        };
+        _db.Users.AddRange(owner, alice);
+        await _db.SaveChangesAsync();
+
+        List<AppUser>? capturedOwners = null;
+        _calendarMock
+            .Setup(c => c.CreateSeriesAsync(It.IsAny<Event>(), It.IsAny<IReadOnlyList<AppUser>>(),
+                It.IsAny<LocalDate>(), It.IsAny<Room?>()))
+            .Callback<Event, IReadOnlyList<AppUser>, LocalDate, Room?>((_, o, _, _) => capturedOwners = o.ToList())
+            .ReturnsAsync("series-id");
+
+        var start = Today.PlusDays(1).At(new LocalTime(9, 0));
+        await _sut.CreateEventAsync(new Event
+        {
+            Title = "Kubernetes Workshop",
+            StartTime = start,
+            EndTime = start.PlusHours(1),
+            Capacity = 10,
+            TimeZoneId = "America/Chicago",
+            EventType = EventType.Workshop
+        }, owner.Id, new List<int> { alice.Id });
+
+        Assert.NotNull(capturedOwners);
+        Assert.Equal(new[] { "Owner", "Alice" }, capturedOwners!.Select(u => u.DisplayName));
     }
 
     [Fact]

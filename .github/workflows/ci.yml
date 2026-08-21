@@ -97,6 +97,13 @@ jobs:
             -p 8080:8080 \
             -e ActiveDirectory__Enabled=false \
             -e SeedUser__Enabled=true \
+            -e SeedUser__ExtraUsers__0__Username=alice \
+            -e SeedUser__ExtraUsers__0__Password=Test123! \
+            -e SeedUser__ExtraUsers__0__DisplayName=Alice \
+            -e SeedUser__ExtraUsers__0__Email=alice@localhost \
+            -e GraphApi__Rooms__0__Email=ci-room@example.com \
+            -e "GraphApi__Rooms__0__DisplayName=CI Room" \
+            -e GraphApi__Rooms__0__Capacity=10 \
             ghcr.io/${{ github.repository }}:latest
 
       - name: Wait for app to be ready
@@ -250,6 +257,111 @@ jobs:
             exit 1
           fi
           echo "Tech meeting verified: signupCount=$TECH_SIGNUP_COUNT, isLightningTalks=$TECH_IS_LR"
+
+          # ── Workshop smoke test ──────────────────────────────────
+
+          # 10. Find the seeded second user to co-own the workshop
+          CO_OWNER_ID=$(curl -sf "http://localhost:8080/api/users/search?q=alice" -b cookies.txt \
+            | jq -r '.[0].id')
+          echo "Co-owner: id=$CO_OWNER_ID"
+          if [ -z "$CO_OWNER_ID" ] || [ "$CO_OWNER_ID" = "null" ]; then
+            echo "FAIL: could not find the seeded co-owner user"
+            exit 1
+          fi
+
+          # 11. Create a workshop with an owning team
+          WS_EVENT=$(curl -sf -X POST http://localhost:8080/api/events \
+            -H "Content-Type: application/json" \
+            -b cookies.txt \
+            -d "{
+              \"title\":\"CI Workshop\",
+              \"startTime\":\"2099-03-15T14:00:00\",
+              \"endTime\":\"2099-03-15T16:00:00\",
+              \"capacity\":3,
+              \"eventType\":2,
+              \"coOwnerIds\":[${CO_OWNER_ID}]
+            }")
+          WS_ID=$(echo "$WS_EVENT" | jq -r .id)
+          WS_OCC_ID=$(echo "$WS_EVENT" | jq -r '.occurrences[0].id')
+          WS_TYPE=$(echo "$WS_EVENT" | jq -r .eventType)
+          WS_CO_OWNERS=$(echo "$WS_EVENT" | jq -r '.coOwners | length')
+          echo "Workshop created: id=$WS_ID, occurrence=$WS_OCC_ID, type=$WS_TYPE, coOwners=$WS_CO_OWNERS"
+
+          if [ "$WS_TYPE" != "Workshop" ] && [ "$WS_TYPE" != "2" ]; then
+            echo "FAIL: expected eventType=Workshop or 2, got $WS_TYPE"
+            exit 1
+          fi
+          if [ "$WS_CO_OWNERS" -ne 1 ]; then
+            echo "FAIL: expected 1 co-owner, got $WS_CO_OWNERS"
+            exit 1
+          fi
+
+          # 12. A workshop signup takes no message, unlike office hours
+          curl -sf -X POST "http://localhost:8080/api/events/${WS_ID}/signup/${WS_OCC_ID}" \
+            -b cookies.txt \
+            -H "Content-Type: application/json" \
+            -d '{"message":""}'
+          echo "Workshop signup without a message: OK"
+
+          # 13. Cancelling the last signup must not tear down the workshop meeting
+          curl -sf -X DELETE "http://localhost:8080/api/events/${WS_ID}/signup/${WS_OCC_ID}" \
+            -b cookies.txt
+          WS_VERIFY=$(curl -sf "http://localhost:8080/api/events/${WS_ID}" -b cookies.txt)
+          WS_SIGNUP_COUNT=$(echo "$WS_VERIFY" | jq -r '.occurrences[0].signupCount')
+          if [ "$WS_SIGNUP_COUNT" -ne 0 ]; then
+            echo "FAIL: expected workshop signupCount=0 after cancel, got $WS_SIGNUP_COUNT"
+            exit 1
+          fi
+          echo "Workshop survives losing its last signup: OK"
+
+          # 14. Co-owner list can be replaced
+          curl -sf -X POST "http://localhost:8080/api/events/${WS_ID}/co-owners" \
+            -b cookies.txt \
+            -H "Content-Type: application/json" \
+            -d '{"userIds":[]}'
+          WS_CO_OWNERS_AFTER=$(curl -sf "http://localhost:8080/api/events/${WS_ID}" -b cookies.txt \
+            | jq -r '.coOwners | length')
+          if [ "$WS_CO_OWNERS_AFTER" -ne 0 ]; then
+            echo "FAIL: expected 0 co-owners after clearing, got $WS_CO_OWNERS_AFTER"
+            exit 1
+          fi
+          echo "Co-owner list cleared: OK"
+
+          # ── Room smoke test ──────────────────────────────────────
+
+          # 15. The rooms endpoint responds with the configured list
+          ROOMS=$(curl -sf http://localhost:8080/api/rooms -b cookies.txt)
+          echo "Rooms endpoint returned: $ROOMS"
+          ROOM_COUNT=$(echo "$ROOMS" | jq -r 'length')
+          if [ "$ROOM_COUNT" -ne 1 ]; then
+            echo "FAIL: expected 1 configured room, got $ROOM_COUNT"
+            exit 1
+          fi
+
+          # 16. Booking that room marks future occurrences pending
+          curl -sf -X POST "http://localhost:8080/api/events/${WS_ID}/room" \
+            -b cookies.txt \
+            -H "Content-Type: application/json" \
+            -d '{"roomEmail":"ci-room@example.com"}'
+          ROOM_NAME=$(curl -sf "http://localhost:8080/api/events/${WS_ID}" -b cookies.txt \
+            | jq -r '.roomDisplayName')
+          if [ "$ROOM_NAME" != "CI Room" ]; then
+            echo "FAIL: expected roomDisplayName=CI Room, got $ROOM_NAME"
+            exit 1
+          fi
+          echo "Room booked: $ROOM_NAME"
+
+          # 17. An unknown room must be rejected rather than silently ignored
+          BAD_ROOM=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X POST "http://localhost:8080/api/events/${WS_ID}/room" \
+            -b cookies.txt \
+            -H "Content-Type: application/json" \
+            -d '{"roomEmail":"nope@example.com"}')
+          if [ "$BAD_ROOM" -ne 400 ]; then
+            echo "FAIL: unknown room should return 400, got $BAD_ROOM"
+            exit 1
+          fi
+          echo "Unknown room rejected: OK"
 
       - name: Stop container
         if: always()

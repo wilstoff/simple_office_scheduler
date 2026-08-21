@@ -69,11 +69,28 @@ public class NoOpCalendarService : ICalendarInviteService
 
     // ── Recurring series (workshops) ────────────────────────────────
 
-    public Task<string> CreateSeriesAsync(Event evt, IReadOnlyList<AppUser> owners, LocalDate windowEnd)
+    public Task<string> CreateSeriesAsync(Event evt, IReadOnlyList<AppUser> owners, LocalDate windowEnd, Room? room)
     {
-        _logger.LogInformation("DEV: Would create Teams series for workshop '{Title}' through {WindowEnd} with {Count} owners: {Owners}",
-            evt.Title, windowEnd, owners.Count, string.Join(", ", owners.Select(o => o.DisplayName)));
+        _logger.LogInformation("DEV: Would create Teams series for workshop '{Title}' through {WindowEnd} in {Room} with {Count} owners: {Owners}",
+            evt.Title, windowEnd, room?.DisplayName ?? "(no room)", owners.Count,
+            string.Join(", ", owners.Select(o => o.DisplayName)));
         return Task.FromResult("fake-graph-series-" + Guid.NewGuid());
+    }
+
+    public Task UpdateSeriesRoomAsync(string graphSeriesId, Room? room)
+    {
+        _logger.LogInformation("DEV: Would set room on Teams series {GraphEventId} to {Room}",
+            graphSeriesId, room?.Email ?? "(none)");
+        return Task.CompletedTask;
+    }
+
+    public Task<RoomBookingOutcome?> GetRoomResponseAsync(string graphEventId, string roomEmail)
+    {
+        // No Graph, so no room mailbox to reply. Report the booking as accepted so the dev and test
+        // flows settle rather than sitting on Pending forever.
+        _logger.LogInformation("DEV: Would read the room response for {GraphEventId} / {Room}",
+            graphEventId, roomEmail);
+        return Task.FromResult<RoomBookingOutcome?>(new RoomBookingOutcome { Status = RoomBookingStatus.Booked });
     }
 
     public Task ExtendSeriesRangeAsync(string graphSeriesId, Event evt, LocalDate newWindowEnd)

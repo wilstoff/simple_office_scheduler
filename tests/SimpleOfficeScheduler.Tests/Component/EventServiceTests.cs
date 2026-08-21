@@ -11,6 +11,7 @@ using SimpleOfficeScheduler.Services;
 using SimpleOfficeScheduler.Services.Calendar;
 using SimpleOfficeScheduler.Services.Events;
 using SimpleOfficeScheduler.Services.Recurrence;
+using SimpleOfficeScheduler.Services.Rooms;
 
 namespace SimpleOfficeScheduler.Tests;
 
@@ -57,6 +58,7 @@ public class EventServiceTests : IDisposable
             _dbFactory,
             new RecurrenceExpander(),
             _calendarMock.Object,
+            new ConfigRoomService(Options.Create(new GraphApiSettings()), NullLogger<ConfigRoomService>.Instance),
             recurrenceSettings,
             Options.Create(new GraphApiSettings()),
             _clock,

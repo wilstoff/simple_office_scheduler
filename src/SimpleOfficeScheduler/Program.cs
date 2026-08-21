@@ -13,6 +13,7 @@ using SimpleOfficeScheduler.Services;
 using Microsoft.AspNetCore.DataProtection;
 using SimpleOfficeScheduler.Services.Ldap;
 using SimpleOfficeScheduler.Services.Recurrence;
+using SimpleOfficeScheduler.Services.Rooms;
 using SimpleOfficeScheduler.Services.Users;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -66,18 +67,27 @@ builder.Services.AddDataProtection()
 builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddScoped<AuthenticationStateProvider, CustomAuthStateProvider>();
 
-// Calendar invite service
+// Calendar and room services. Rooms come from Graph /places when it is configured, and from the
+// GraphApi:Rooms config list otherwise. GraphRoomService also falls back to the config list at
+// runtime, which is what happens when Place.Read.All has not been consented to.
 var graphSettings = builder.Configuration.GetSection("GraphApi").Get<GraphApiSettings>();
-if (!string.IsNullOrEmpty(graphSettings?.ClientId) &&
+var graphConfigured =
+    !string.IsNullOrEmpty(graphSettings?.ClientId) &&
     !string.IsNullOrEmpty(graphSettings?.TenantId) &&
     !string.IsNullOrEmpty(graphSettings?.ClientSecret) &&
-    !string.IsNullOrEmpty(graphSettings?.TargetMailbox))
+    !string.IsNullOrEmpty(graphSettings?.TargetMailbox);
+
+builder.Services.AddSingleton<ConfigRoomService>();
+
+if (graphConfigured)
 {
     builder.Services.AddScoped<ICalendarInviteService, GraphCalendarService>();
+    builder.Services.AddSingleton<IRoomService, GraphRoomService>();
 }
 else
 {
     builder.Services.AddScoped<ICalendarInviteService, NoOpCalendarService>();
+    builder.Services.AddSingleton<IRoomService>(sp => sp.GetRequiredService<ConfigRoomService>());
 }
 
 // Real-time calendar update notifications
