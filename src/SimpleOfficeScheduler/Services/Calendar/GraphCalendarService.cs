@@ -294,6 +294,32 @@ public class GraphCalendarService : ICalendarInviteService
         return created?.Id ?? throw new InvalidOperationException("Graph API did not return an event ID.");
     }
 
+    public async Task UpdateSeriesScheduleAsync(string graphSeriesId, AppEvent evt, LocalDate windowEnd)
+    {
+        var targetEmail = _settings.TargetMailbox;
+
+        // Sending Recurrence on an event that has none converts a single meeting into a series,
+        // which is what happens when a workshop is made recurring after it was created.
+        await _graphClient.Users[targetEmail].Events[graphSeriesId].PatchAsync(new GraphEvent
+        {
+            Subject = evt.Title,
+            Start = new DateTimeTimeZone
+            {
+                DateTime = evt.StartTime.ToDateTimeUnspecified().ToString("yyyy-MM-ddTHH:mm:ss"),
+                TimeZone = evt.TimeZoneId
+            },
+            End = new DateTimeTimeZone
+            {
+                DateTime = evt.EndTime.ToDateTimeUnspecified().ToString("yyyy-MM-ddTHH:mm:ss"),
+                TimeZone = evt.TimeZoneId
+            },
+            Recurrence = GraphRecurrenceMapper.Map(evt, windowEnd)
+        });
+
+        _logger.LogInformation("Updated Teams series {GraphEventId} to '{Title}' {Start}-{End}, recurring={Recurring}, through {WindowEnd}",
+            graphSeriesId, evt.Title, evt.StartTime, evt.EndTime, evt.Recurrence is not null, windowEnd);
+    }
+
     public async Task ExtendSeriesRangeAsync(string graphSeriesId, AppEvent evt, LocalDate newWindowEnd)
     {
         var targetEmail = _settings.TargetMailbox;

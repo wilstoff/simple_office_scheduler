@@ -34,6 +34,13 @@ public interface ICalendarInviteService
     /// </summary>
     Task<RoomBookingOutcome?> GetRoomResponseAsync(string graphEventId, string roomEmail);
 
+    /// <summary>
+    /// Pushes the event's current subject, time and recurrence onto the series. This is what makes
+    /// an edit visible on attendees' calendars; without it the app and Graph drift apart, and a
+    /// workshop turned recurring after creation stays a single meeting.
+    /// </summary>
+    Task UpdateSeriesScheduleAsync(string graphSeriesId, Event evt, LocalDate windowEnd);
+
     /// <summary>Pushes the series recurrence range end date forward.</summary>
     Task ExtendSeriesRangeAsync(string graphSeriesId, Event evt, LocalDate newWindowEnd);
 

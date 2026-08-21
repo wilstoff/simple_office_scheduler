@@ -93,6 +93,13 @@ public class NoOpCalendarService : ICalendarInviteService
         return Task.FromResult<RoomBookingOutcome?>(new RoomBookingOutcome { Status = RoomBookingStatus.Booked });
     }
 
+    public Task UpdateSeriesScheduleAsync(string graphSeriesId, Event evt, LocalDate windowEnd)
+    {
+        _logger.LogInformation("DEV: Would update Teams series {GraphEventId} to '{Title}' {Start}-{End}, recurring={Recurring}, through {WindowEnd}",
+            graphSeriesId, evt.Title, evt.StartTime, evt.EndTime, evt.Recurrence is not null, windowEnd);
+        return Task.CompletedTask;
+    }
+
     public Task ExtendSeriesRangeAsync(string graphSeriesId, Event evt, LocalDate newWindowEnd)
     {
         _logger.LogInformation("DEV: Would extend Teams series {GraphEventId} range to {WindowEnd}",
