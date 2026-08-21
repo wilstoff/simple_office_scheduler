@@ -339,18 +339,45 @@ public class GraphCalendarService : ICalendarInviteService
         return match?.Id;
     }
 
-    public async Task PatchInstanceAttendeesAsync(string instanceId, IReadOnlyList<AppUser> owners, IReadOnlyList<EventSignup> signups)
+    /// <summary>
+    /// Builds the attendee list for one series instance: the booked room carried over from the
+    /// instance as it stands, the owners as required, and the current signups as optional.
+    ///
+    /// Carrying the resource attendee over is the point. Patching an instance replaces its whole
+    /// attendee list, so sending only people cancels the room's hold on that single date while the
+    /// rest of the series keeps it. People are rebuilt from scratch rather than merged so that
+    /// someone who cancelled actually comes off the instance.
+    /// </summary>
+    internal static List<Attendee> MergeInstanceAttendees(
+        IEnumerable<Attendee>? existing,
+        IReadOnlyList<AppUser> owners,
+        IReadOnlyList<EventSignup> signups)
     {
-        var targetEmail = _settings.TargetMailbox;
+        var attendees = (existing ?? Enumerable.Empty<Attendee>())
+            .Where(a => a.Type == AttendeeType.Resource)
+            .ToList();
 
-        var attendees = RequiredAttendees(owners);
+        attendees.AddRange(RequiredAttendees(owners));
+
         attendees.AddRange(signups
-            .Where(s => s.User is not null && owners.All(o => !string.Equals(o.Email, s.User.Email, StringComparison.OrdinalIgnoreCase)))
+            .Where(s => s.User is not null
+                && owners.All(o => !string.Equals(o.Email, s.User.Email, StringComparison.OrdinalIgnoreCase)))
             .Select(s => new Attendee
             {
                 EmailAddress = new EmailAddress { Address = s.User.Email, Name = s.User.DisplayName },
                 Type = AttendeeType.Optional
             }));
+
+        return attendees;
+    }
+
+    public async Task PatchInstanceAttendeesAsync(string instanceId, IReadOnlyList<AppUser> owners, IReadOnlyList<EventSignup> signups)
+    {
+        var targetEmail = _settings.TargetMailbox;
+
+        // Read the instance first so the room booked on the series survives the patch.
+        var existing = await _graphClient.Users[targetEmail].Events[instanceId].GetAsync();
+        var attendees = MergeInstanceAttendees(existing?.Attendees, owners, signups);
 
         await _graphClient.Users[targetEmail].Events[instanceId].PatchAsync(new GraphEvent
         {
@@ -358,8 +385,9 @@ public class GraphCalendarService : ICalendarInviteService
             Body = new ItemBody { ContentType = BodyType.Html, Content = BuildMeetingBody(signups) }
         });
 
-        _logger.LogInformation("Patched attendees on Teams series instance {InstanceId}: {OwnerCount} owners, {SignupCount} signups",
-            instanceId, owners.Count, signups.Count);
+        _logger.LogInformation(
+            "Patched attendees on Teams series instance {InstanceId}: {OwnerCount} owners, {SignupCount} signups, {ResourceCount} resources kept",
+            instanceId, owners.Count, signups.Count, attendees.Count(a => a.Type == AttendeeType.Resource));
     }
 
     public async Task UpdateSeriesRoomAsync(string graphSeriesId, AppRoom? room)
