@@ -18,6 +18,10 @@
                 {
                     <span class="badge bg-success ms-2" style="font-size: 0.6em; vertical-align: middle;">Tech Meeting</span>
                 }
+                else if (_isWorkshop)
+                {
+                    <span class="badge bg-info ms-2" style="font-size: 0.6em; vertical-align: middle;">Workshop</span>
+                }
             </h5>
             <button class="btn-panel-close" @onclick="Close">&times;</button>
         </div>
@@ -28,7 +32,15 @@
             }
 
             <div class="mb-3" style="color: var(--text-muted); font-size: 0.85rem;">
-                by @_event.Owner?.DisplayName
+                @if (_isWorkshop && _event.CoOwners.Any())
+                {
+                    <span>run by @string.Join(", ", new[] { _event.Owner?.DisplayName ?? "" }
+                        .Concat(_event.CoOwners.Select(o => o.User.DisplayName)))</span>
+                }
+                else
+                {
+                    <span>by @_event.Owner?.DisplayName</span>
+                }
             </div>
 
             @if (!string.IsNullOrEmpty(_event.Description))
@@ -279,9 +291,11 @@
 
     private Event? _event;
     private EventOccurrence? _selectedOccurrence;
+    // _isOwner means "may manage this event": the creator or any co-owner.
     private bool _isOwner;
     private bool _isSignedUp;
     private bool _isTechMeeting;
+    private bool _isWorkshop;
     private bool _isLightningTalks;
     private bool _isContributor;
     private int _effectiveCapacity;
@@ -323,10 +337,12 @@
         if (userIdClaim is not null && int.TryParse(userIdClaim.Value, out var uid))
         {
             _currentUserId = uid;
-            _isOwner = _event.OwnerUserId == uid;
+            _isOwner = _event.OwnerUserId == uid
+                || _event.CoOwners.Any(o => o.UserId == uid);
         }
 
         _isTechMeeting = _event.EventType == EventType.TechMeeting;
+        _isWorkshop = _event.EventType == EventType.Workshop;
 
         if (OccurrenceId.HasValue)
         {

@@ -19,9 +19,23 @@ public class Event
 
     public RecurrencePattern? Recurrence { get; set; }
 
+    /// <summary>
+    /// Graph id of the recurring series backing this event. Workshops only; office hours and tech
+    /// meetings create a standalone Graph event per occurrence instead.
+    /// </summary>
+    public string? GraphSeriesId { get; set; }
+
+    /// <summary>
+    /// How far the Graph series currently extends. Rolled forward before it lapses rather than
+    /// creating a new series, so attendees keep one invite and the per-instance signup exceptions
+    /// stay attached.
+    /// </summary>
+    public LocalDate? GraphSeriesWindowEnd { get; set; }
+
     public Instant CreatedAt { get; set; }
     public Instant UpdatedAt { get; set; }
 
+    public ICollection<EventOwner> CoOwners { get; set; } = new List<EventOwner>();
     public ICollection<EventOccurrence> Occurrences { get; set; } = new List<EventOccurrence>();
     public ICollection<EventReminderDefinition> ReminderDefinitions { get; set; } = new List<EventReminderDefinition>();
 }

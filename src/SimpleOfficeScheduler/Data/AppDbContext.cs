@@ -11,6 +11,7 @@ public class AppDbContext : DbContext
 
     public DbSet<AppUser> Users => Set<AppUser>();
     public DbSet<Event> Events => Set<Event>();
+    public DbSet<EventOwner> EventOwners => Set<EventOwner>();
     public DbSet<EventOccurrence> EventOccurrences => Set<EventOccurrence>();
     public DbSet<EventSignup> EventSignups => Set<EventSignup>();
     public DbSet<OccurrenceContributor> OccurrenceContributors => Set<OccurrenceContributor>();
@@ -80,6 +81,22 @@ public class AppDbContext : DbContext
                             c => c.Aggregate(0, (hash, v) => HashCode.Combine(hash, v.GetHashCode())),
                             c => c.ToList()));
             });
+        });
+
+        // EventOwner
+        modelBuilder.Entity<EventOwner>(entity =>
+        {
+            entity.HasOne(e => e.Event)
+                .WithMany(ev => ev.CoOwners)
+                .HasForeignKey(e => e.EventId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(e => e.User)
+                .WithMany(u => u.CoOwnedEvents)
+                .HasForeignKey(e => e.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(e => new { e.EventId, e.UserId }).IsUnique();
         });
 
         // EventOccurrence

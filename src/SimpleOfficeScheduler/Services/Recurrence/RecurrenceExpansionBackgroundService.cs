@@ -3,6 +3,7 @@ using Microsoft.Extensions.Options;
 using NodaTime;
 using SimpleOfficeScheduler.Data;
 using SimpleOfficeScheduler.Models;
+using SimpleOfficeScheduler.Services.Events;
 
 namespace SimpleOfficeScheduler.Services.Recurrence;
 
@@ -35,8 +36,27 @@ public class RecurrenceExpansionBackgroundService : BackgroundService
                 _logger.LogError(ex, "Error expanding recurring events.");
             }
 
+            try
+            {
+                await ExtendWorkshopSeries(stoppingToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error extending workshop series ranges.");
+            }
+
             await Task.Delay(TimeSpan.FromHours(_settings.ExpansionCheckIntervalHours), stoppingToken);
         }
+    }
+
+    private async Task ExtendWorkshopSeries(CancellationToken ct)
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var eventService = scope.ServiceProvider.GetRequiredService<IEventService>();
+
+        var extended = await eventService.ExtendExpiringWorkshopSeriesAsync(ct);
+        if (extended > 0)
+            _logger.LogInformation("Extended the Graph series range for {Count} workshops.", extended);
     }
 
     private async Task ExpandRecurringEvents(CancellationToken ct)

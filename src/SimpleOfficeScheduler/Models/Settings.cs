@@ -18,6 +18,13 @@ public class GraphApiSettings
     public string ClientId { get; set; } = string.Empty;
     public string ClientSecret { get; set; } = string.Empty;
     public string TargetMailbox { get; set; } = string.Empty;
+
+    /// <summary>
+    /// How far ahead a workshop's Graph series is allowed to extend. Exchange room mailboxes refuse
+    /// bookings past BookingWindowInDays (180 by default), and the app cannot read that value, so
+    /// this stays a little under it. The series range is rolled forward as time passes.
+    /// </summary>
+    public int RoomBookingWindowDays { get; set; } = 170;
 }
 
 public class SeedUserSettings

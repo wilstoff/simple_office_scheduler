@@ -20,6 +20,7 @@ public class CreateEventRequest
     public string? TimeZoneId { get; set; }
     public EventType EventType { get; set; } = EventType.OfficeHours;
     public RecurrencePatternDto? Recurrence { get; set; }
+    public List<int> CoOwnerIds { get; set; } = new();
 }
 
 public class UpdateEventRequest
@@ -56,8 +57,20 @@ public class EventResponse
     public string TimeZoneId { get; set; } = string.Empty;
     public EventType EventType { get; set; }
     public RecurrencePatternDto? Recurrence { get; set; }
+    public List<CoOwnerResponse> CoOwners { get; set; } = new();
     public List<OccurrenceResponse> Occurrences { get; set; } = new();
     public List<ReminderDefinitionResponse> ReminderDefinitions { get; set; } = new();
+}
+
+public class CoOwnerResponse
+{
+    public int UserId { get; set; }
+    public string DisplayName { get; set; } = string.Empty;
+}
+
+public class SetCoOwnersRequest
+{
+    public List<int> UserIds { get; set; } = new();
 }
 
 public class OccurrenceResponse
@@ -91,7 +104,8 @@ public class SignupResponse
 
 public class SignUpRequest
 {
-    [Required, MinLength(1)]
+    // Office hours and lightning talks require a message; workshops do not. EventService enforces
+    // that per event type, so there is no model-level Required here.
     public string Message { get; set; } = string.Empty;
 }
 
