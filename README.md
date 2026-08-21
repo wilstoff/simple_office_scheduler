@@ -56,10 +56,13 @@ All settings can be overridden with environment variables using the `__` (double
 | `GraphApi__ClientId` | *(empty)* | Azure app registration client ID |
 | `GraphApi__ClientSecret` | *(empty)* | Graph API client secret |
 | `GraphApi__TargetMailbox` | *(empty)* | Shared mailbox to create meetings on (e.g. `simple_office_scheduler@mycompany.com`) |
+| `GraphApi__RoomBookingWindowDays` | `170` | How far ahead a workshop's recurring series may extend (see below) |
 
 When all four settings (`TenantId`, `ClientId`, `ClientSecret`, `TargetMailbox`) are set, the app creates Teams calendar invites via Microsoft Graph on the target mailbox. Use an [Application Access Policy](https://learn.microsoft.com/en-us/graph/auth-limit-mailbox-access) to restrict the app's access to only this mailbox.
 
 When any setting is missing, calendar invite functionality is disabled (no-op).
+
+Workshops are backed by a single Graph recurring series rather than one event per occurrence. Exchange room mailboxes refuse a booking further out than `BookingWindowInDays` (180 days by default), so the series recurrence range only ever runs `RoomBookingWindowDays` ahead of today. A background pass rolls that range forward once it is within 30 days of lapsing, which also re-sends the update to any booked room so it evaluates the newly added dates. Lower `RoomBookingWindowDays` if your rooms use a shorter booking window.
 
 ### Seed User
 
@@ -173,6 +176,7 @@ dotnet test
 ## Features
 
 - Create and manage events (one-time or recurring)
+- Three event types: office hours (open sign-ups), tech meetings (assigned contributors and lightning talks), and workshops (team-owned, meeting created up front)
 - Browse events with search and weekly calendar view (FullCalendar)
 - Sign up for events with capacity enforcement
 - Cancel specific instances of recurring events

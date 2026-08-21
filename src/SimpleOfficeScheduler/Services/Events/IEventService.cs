@@ -5,7 +5,7 @@ namespace SimpleOfficeScheduler.Services.Events;
 
 public interface IEventService
 {
-    Task<Event> CreateEventAsync(Event evt, int ownerUserId);
+    Task<Event> CreateEventAsync(Event evt, int ownerUserId, List<int>? coOwnerUserIds = null);
     Task<Event?> GetEventAsync(int eventId);
     Task<List<Event>> SearchEventsAsync(string? searchTerm);
     Task<List<EventOccurrence>> GetOccurrencesInRangeAsync(LocalDateTime start, LocalDateTime end);
@@ -16,6 +16,8 @@ public interface IEventService
     Task<(bool Success, string? Error)> UncancelOccurrenceAsync(int occurrenceId, int userId);
     Task<(bool Success, string? Error)> UpdateEventAsync(Event evt, int userId);
     Task<(bool Success, string? Error)> TransferOwnershipAsync(int eventId, int currentOwnerId, int newOwnerId);
+    Task<(bool Success, string? Error)> SetCoOwnersAsync(int eventId, int userId, List<int> coOwnerUserIds);
+    Task<int> ExtendExpiringWorkshopSeriesAsync(CancellationToken ct = default);
     Task<(bool Success, string? Error)> DeleteEventAsync(int eventId, int userId);
     Task<(bool Success, string? Error)> SetContributorsAsync(int occurrenceId, int userId, List<int> contributorUserIds);
     Task<(bool Success, string? Error)> ToggleLightningTalksAsync(int occurrenceId, int userId, bool isLightningTalks, int? capacity = null);

@@ -104,6 +104,11 @@ function createAndRenderCalendar(
                 // Lightning talks: prepend count to title, detail shows owner
                 titlePrefix = `[${props['signedUp']}/${props['capacity']}] `;
                 detailText = props['owner'] || '';
+            } else if (props['eventType'] === 'Workshop') {
+                // Workshop: sign-up count on the title, owning team in the detail line
+                titlePrefix = `[${props['signedUp']}/${props['capacity']}] `;
+                const owners = props['owners'] as string[] || [];
+                detailText = owners.length > 0 ? owners.join(', ') : props['owner'] || '';
             } else {
                 // Office hours: prepend count to title, owner in detail
                 titlePrefix = `[${props['signedUp']}/${props['capacity']}] `;

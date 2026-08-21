@@ -1,5 +1,7 @@
 @using NodaTime
 @using SimpleOfficeScheduler.Services
+@using SimpleOfficeScheduler.Services.Users
+@inject IUserSearchService UserSearchService
 @inject IEventService EventService
 @inject AuthenticationStateProvider AuthStateProvider
 @inject IJSRuntime JS
@@ -35,12 +37,49 @@
                 <InputSelect class="form-select" @bind-Value="_model.EventType" disabled="@EventId.HasValue">
                     <option value="@EventType.OfficeHours">Office Hours</option>
                     <option value="@EventType.TechMeeting">Tech Meeting</option>
+                    <option value="@EventType.Workshop">Workshop</option>
                 </InputSelect>
                 @if (_model.EventType == EventType.TechMeeting)
                 {
                     <small class="text-muted">Capacity applies to lightning talks sessions only.</small>
                 }
+                else if (_model.EventType == EventType.Workshop)
+                {
+                    <small class="text-muted">The meeting is created up front for the owning team. Capacity limits sign-ups only.</small>
+                }
             </div>
+
+            @if (_model.EventType == EventType.Workshop)
+            {
+                <div class="mb-3">
+                    <label class="form-label">Owning team</label>
+                    <div class="d-flex gap-1">
+                        <UserTypeahead SelectedUser="@_coOwnerToAdd"
+                                       SelectedUserChanged="@(u => _coOwnerToAdd = u)"
+                                       Placeholder="Add a co-owner..." />
+                        <button type="button" class="btn btn-outline-primary"
+                                disabled="@(_coOwnerToAdd is null)"
+                                @onclick="AddCoOwner">Add</button>
+                    </div>
+                    @if (_model.CoOwners.Count > 0)
+                    {
+                        <div class="d-flex flex-wrap gap-1 mt-2">
+                            @foreach (var co in _model.CoOwners)
+                            {
+                                <span class="badge bg-secondary d-flex align-items-center gap-1">
+                                    @co.DisplayName
+                                    <button type="button" class="btn-close btn-close-white"
+                                            style="font-size:0.55rem;"
+                                            @onclick="() => _model.CoOwners.Remove(co)"></button>
+                                </span>
+                            }
+                        </div>
+                    }
+                    <small class="text-muted d-block mt-1">
+                        Co-owners can edit the workshop and are on every occurrence's meeting.
+                    </small>
+                </div>
+            }
 
             <div class="mb-3">
                 <label class="form-label">Description</label>
@@ -336,7 +375,8 @@
             }
             else
             {
-                await EventService.CreateEventAsync(evt, userId);
+                await EventService.CreateEventAsync(evt, userId,
+                    _model.CoOwners.Select(c => c.UserId).ToList());
             }
 
             await OnEventSaved.InvokeAsync();
@@ -356,6 +396,34 @@
         await IsVisibleChanged.InvokeAsync(false);
     }
 
+    private record CoOwnerChoice(int UserId, string DisplayName);
+
+    private SimpleOfficeScheduler.Services.Users.UserSearchResult? _coOwnerToAdd;
+
+    private async Task AddCoOwner()
+    {
+        var selection = _coOwnerToAdd;
+        if (selection is null) return;
+
+        var userId = selection.Id;
+        if (selection.IsAdOnly)
+        {
+            // AD-only results have no local row yet, and ownership needs a real user id.
+            var ensured = await UserSearchService.EnsureUserAsync(selection.Username);
+            if (ensured is null)
+            {
+                _errorMessage = "Could not create a local account for the selected AD user.";
+                return;
+            }
+            userId = ensured.Id;
+        }
+
+        if (!_model.CoOwners.Any(c => c.UserId == userId))
+            _model.CoOwners.Add(new CoOwnerChoice(userId, selection.DisplayName));
+
+        _coOwnerToAdd = null;
+    }
+
     private class EventFormModel
     {
         [Required]
@@ -366,6 +434,7 @@
         public int Capacity { get; set; } = 1;
         public string TimeZoneId { get; set; } = string.Empty;
         public EventType EventType { get; set; } = EventType.OfficeHours;
+        public List<CoOwnerChoice> CoOwners { get; set; } = new();
         public bool IsRecurring { get; set; }
         public RecurrenceType RecurrenceType { get; set; } = RecurrenceType.Weekly;
         public int Interval { get; set; } = 1;

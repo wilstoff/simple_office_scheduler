@@ -58,6 +58,7 @@ public class EventServiceTests : IDisposable
             new RecurrenceExpander(),
             _calendarMock.Object,
             recurrenceSettings,
+            Options.Create(new GraphApiSettings()),
             _clock,
             NullLogger<EventService>.Instance,
             _notifier);

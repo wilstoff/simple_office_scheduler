@@ -39,18 +39,20 @@ public class EventsApiController : ControllerBase
             var endUtc = TimeZoneHelper.WallClockToUtc(o.EndTime.ToDateTimeUnspecified(), o.Event.TimeZoneId);
 
             var isTechMeeting = o.Event.EventType == EventType.TechMeeting;
+            var isWorkshop = o.Event.EventType == EventType.Workshop;
             var isLightningTalks = o.IsLightningTalks;
             var effectiveCapacity = o.LightningTalksCapacity ?? o.Event.Capacity;
             var color = o.IsCancelled ? "#ccc"
                 : isLightningTalks && o.Signups.Count >= effectiveCapacity ? "#ffc107"
                 : isTechMeeting ? "#198754"
                 : o.Signups.Count >= o.Event.Capacity ? "#ffc107"
+                : isWorkshop ? "#0dcaf0"
                 : "#0d6efd";
 
             return new
             {
                 id = o.Id.ToString(),
-                title = isTechMeeting ? o.DisplayName : o.Event.Title,
+                title = isTechMeeting || isWorkshop ? o.DisplayName : o.Event.Title,
                 start = startUtc.ToString("yyyy-MM-ddTHH:mm:ssZ"),
                 end = endUtc.ToString("yyyy-MM-ddTHH:mm:ssZ"),
                 color,
@@ -65,7 +67,10 @@ public class EventsApiController : ControllerBase
                     timeZoneId = o.Event.TimeZoneId,
                     eventType = o.Event.EventType.ToString(),
                     isLightningTalks = o.IsLightningTalks,
-                    contributors = o.Contributors?.Select(c => c.User.DisplayName).ToList() ?? new List<string>()
+                    contributors = o.Contributors?.Select(c => c.User.DisplayName).ToList() ?? new List<string>(),
+                    owners = new[] { o.Event.Owner.DisplayName }
+                        .Concat(o.Event.CoOwners?.Select(co => co.User.DisplayName) ?? Enumerable.Empty<string>())
+                        .ToList()
                 }
             };
         });
@@ -113,7 +118,15 @@ public class EventsApiController : ControllerBase
             } : null
         };
 
-        var created = await _eventService.CreateEventAsync(evt, GetUserId());
+        Event created;
+        try
+        {
+            created = await _eventService.CreateEventAsync(evt, GetUserId(), request.CoOwnerIds);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
 
         var full = await _eventService.GetEventAsync(created.Id);
         return CreatedAtAction(nameof(GetEvent), new { id = created.Id }, MapEventResponse(full!));
@@ -214,6 +227,16 @@ public class EventsApiController : ControllerBase
         return Ok();
     }
 
+    [HttpPost("{id:int}/co-owners")]
+    [Authorize]
+    public async Task<IActionResult> SetCoOwners(int id, [FromBody] SetCoOwnersRequest request)
+    {
+        var (success, error) = await _eventService.SetCoOwnersAsync(id, GetUserId(), request.UserIds);
+        if (!success) return BadRequest(new { error });
+
+        return Ok();
+    }
+
     // ── Tech Meeting Endpoints ──────────────────────────────────────
 
     [HttpPost("occurrences/{occurrenceId:int}/contributors")]
@@ -290,6 +313,11 @@ public class EventsApiController : ControllerBase
             RecurrenceEndDate = evt.Recurrence.RecurrenceEndDate,
             MaxOccurrences = evt.Recurrence.MaxOccurrences
         } : null,
+        CoOwners = evt.CoOwners?.Select(o => new CoOwnerResponse
+        {
+            UserId = o.UserId,
+            DisplayName = o.User?.DisplayName ?? ""
+        }).ToList() ?? new(),
         ReminderDefinitions = evt.ReminderDefinitions?.OrderBy(d => d.DisplayOrder).Select(d => new ReminderDefinitionResponse
         {
             Id = d.Id,

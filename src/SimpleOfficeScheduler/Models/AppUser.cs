@@ -15,6 +15,7 @@ public class AppUser
     public string? TimeZonePreference { get; set; }
 
     public ICollection<Event> OwnedEvents { get; set; } = new List<Event>();
+    public ICollection<EventOwner> CoOwnedEvents { get; set; } = new List<EventOwner>();
     public ICollection<EventSignup> Signups { get; set; } = new List<EventSignup>();
     public ICollection<OccurrenceContributor> Contributions { get; set; } = new List<OccurrenceContributor>();
 }

@@ -1,3 +1,4 @@
+using NodaTime;
 using SimpleOfficeScheduler.Models;
 
 namespace SimpleOfficeScheduler.Services.Calendar;
@@ -63,6 +64,44 @@ public class NoOpCalendarService : ICalendarInviteService
     {
         _logger.LogInformation("DEV: Would update subject for meeting {GraphEventId} to '{Subject}'",
             graphEventId, subject);
+        return Task.CompletedTask;
+    }
+
+    // ── Recurring series (workshops) ────────────────────────────────
+
+    public Task<string> CreateSeriesAsync(Event evt, IReadOnlyList<AppUser> owners, LocalDate windowEnd)
+    {
+        _logger.LogInformation("DEV: Would create Teams series for workshop '{Title}' through {WindowEnd} with {Count} owners: {Owners}",
+            evt.Title, windowEnd, owners.Count, string.Join(", ", owners.Select(o => o.DisplayName)));
+        return Task.FromResult("fake-graph-series-" + Guid.NewGuid());
+    }
+
+    public Task ExtendSeriesRangeAsync(string graphSeriesId, Event evt, LocalDate newWindowEnd)
+    {
+        _logger.LogInformation("DEV: Would extend Teams series {GraphEventId} range to {WindowEnd}",
+            graphSeriesId, newWindowEnd);
+        return Task.CompletedTask;
+    }
+
+    public Task<string?> GetInstanceIdAsync(string graphSeriesId, LocalDateTime occurrenceStart, string timeZoneId)
+    {
+        _logger.LogInformation("DEV: Would resolve instance of series {GraphEventId} at {Start} ({TimeZone})",
+            graphSeriesId, occurrenceStart, timeZoneId);
+        return Task.FromResult<string?>($"{graphSeriesId}-instance-{occurrenceStart:yyyyMMddHHmm}");
+    }
+
+    public Task PatchInstanceAttendeesAsync(string instanceId, IReadOnlyList<AppUser> owners, IReadOnlyList<EventSignup> signups)
+    {
+        _logger.LogInformation("DEV: Would patch attendees on series instance {InstanceId}: {OwnerCount} owners, {SignupCount} signups",
+            instanceId, owners.Count, signups.Count);
+        LogSignupTopics(signups);
+        return Task.CompletedTask;
+    }
+
+    public Task UpdateSeriesOwnersAsync(string graphSeriesId, IReadOnlyList<AppUser> owners)
+    {
+        _logger.LogInformation("DEV: Would set owners on Teams series {GraphEventId} to {Count}: {Owners}",
+            graphSeriesId, owners.Count, string.Join(", ", owners.Select(o => o.DisplayName)));
         return Task.CompletedTask;
     }
 

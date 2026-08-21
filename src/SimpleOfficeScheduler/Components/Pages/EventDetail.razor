@@ -67,7 +67,45 @@
     </div>
 </div>
 
-@if (_isOwner)
+@if (_isWorkshop)
+{
+    <div class="card mb-3">
+        <div class="card-body">
+            <h5 class="card-title">Owning Team</h5>
+            <div class="d-flex flex-wrap gap-1 mb-2">
+                <span class="badge bg-primary">@_event.Owner.DisplayName (creator)</span>
+                @foreach (var co in _event.CoOwners)
+                {
+                    <span class="badge bg-secondary d-flex align-items-center gap-1">
+                        @co.User.DisplayName
+                        @if (_isOwner)
+                        {
+                            <button type="button" class="btn-close btn-close-white" style="font-size:0.55rem;"
+                                    @onclick="() => RemoveCoOwner(co.UserId)"></button>
+                        }
+                    </span>
+                }
+            </div>
+            @if (_isOwner)
+            {
+                <div class="d-flex gap-1 align-items-center">
+                    <UserTypeahead SelectedUser="@_coOwnerSelection"
+                                   SelectedUserChanged="@(u => _coOwnerSelection = u)"
+                                   ExcludeUserId="_event.OwnerUserId"
+                                   Placeholder="Add a co-owner..." />
+                    <button class="btn btn-sm btn-outline-primary"
+                            disabled="@(_coOwnerSelection is null)"
+                            @onclick="AddCoOwner">Add</button>
+                </div>
+                <small class="text-muted d-block mt-1">
+                    Co-owners can edit this workshop and are attendees on every occurrence.
+                </small>
+            }
+        </div>
+    </div>
+}
+
+@if (_isCreator)
 {
     <div class="card mb-3">
         <div class="card-body">
@@ -183,7 +221,7 @@ else
 
                     <tr class="@(occ.IsCancelled ? "table-secondary" : "")">
                         <td>
-                            @if (_isTechMeeting && !string.IsNullOrEmpty(occ.DisplayName) && occ.DisplayName != _event.Title)
+                            @if ((_isTechMeeting || _isWorkshop) && !string.IsNullOrEmpty(occ.DisplayName) && occ.DisplayName != _event.Title)
                             {
                                 <strong>@occ.DisplayName</strong><br />
                             }
@@ -264,7 +302,7 @@ else
                             }
                             else
                             {
-                                @* Office hours or lightning talks: show signups *@
+                                @* Office hours, workshops, or lightning talks: show signups *@
                                 var effectiveCap = occ.LightningTalksCapacity ?? _event.Capacity;
                                 <span>@signupCount / @effectiveCap</span>
                                 @if (occ.Signups.Any())
@@ -273,6 +311,15 @@ else
                                     <small class="text-muted">
                                         @string.Join(", ", occ.Signups.Select(s => s.User.DisplayName))
                                     </small>
+                                }
+                                @if (_isWorkshop && _isOwner)
+                                {
+                                    <div class="d-flex gap-1 align-items-center mt-1">
+                                        <input type="text" class="form-control form-control-sm" style="max-width: 200px;"
+                                               placeholder="Topic..."
+                                               value="@(occ.NameSuffix ?? "")"
+                                               @onchange="(e) => SaveNameSuffix(occ.Id, e.Value?.ToString())" />
+                                    </div>
                                 }
                             }
                         </td>
@@ -315,7 +362,7 @@ else
                                         <div class="d-flex gap-1 align-items-center mt-1">
                                             <input type="text" class="form-control form-control-sm" style="max-width: 200px;"
                                                    data-testid="signup-message"
-                                                   placeholder="Topic to discuss"
+                                                   placeholder="@(_isWorkshop ? "Note (optional)" : "Topic to discuss")"
                                                    value="@GetSignupMessage(occ.Id)"
                                                    @oninput="(e) => SetSignupMessage(occ.Id, e.Value?.ToString())" />
                                             <button class="btn btn-sm btn-primary"
@@ -407,7 +454,7 @@ else
 
                             <tr class="@(occ.IsCancelled ? "table-secondary" : "")">
                                 <td>
-                                    @if (_isTechMeeting && !string.IsNullOrEmpty(occ.DisplayName) && occ.DisplayName != _event.Title)
+                                    @if ((_isTechMeeting || _isWorkshop) && !string.IsNullOrEmpty(occ.DisplayName) && occ.DisplayName != _event.Title)
                                     {
                                         <strong>@occ.DisplayName</strong><br />
                                     }
@@ -486,11 +533,16 @@ else
 
     private Event? _event;
     private int _currentUserId;
+    // _isOwner means "may manage this event": the creator or any co-owner. _isCreator is the
+    // narrower check, used only where ownership itself is being reassigned.
     private bool _isOwner;
+    private bool _isCreator;
     private bool _isTechMeeting;
+    private bool _isWorkshop;
     private string? _message;
     private bool _messageIsError;
     private UserSearchResult? _selectedTransferUser;
+    private UserSearchResult? _coOwnerSelection;
     private readonly Dictionary<int, UserSearchResult?> _contributorSelections = new();
     private readonly Dictionary<int, string> _signupMessages = new();
     private string? _newReminderName;
@@ -509,8 +561,10 @@ else
     private async Task LoadEvent()
     {
         _event = await EventService.GetEventAsync(EventId);
-        _isOwner = _event?.OwnerUserId == _currentUserId;
+        _isCreator = _event?.OwnerUserId == _currentUserId;
+        _isOwner = _isCreator || (_event?.CoOwners.Any(o => o.UserId == _currentUserId) ?? false);
         _isTechMeeting = _event?.EventType == EventType.TechMeeting;
+        _isWorkshop = _event?.EventType == EventType.Workshop;
     }
 
     private string? GetSignupMessage(int occurrenceId) =>
@@ -549,6 +603,49 @@ else
     {
         var (success, error) = await EventService.UncancelOccurrenceAsync(occurrenceId, _currentUserId);
         _message = success ? "Session restored." : error;
+        _messageIsError = !success;
+        await LoadEvent();
+    }
+
+    private async Task AddCoOwner()
+    {
+        if (_event is null || _coOwnerSelection is null) return;
+
+        var targetUserId = _coOwnerSelection.Id;
+
+        // AD-only users have no local record yet, and ownership needs a real user id.
+        if (_coOwnerSelection.IsAdOnly)
+        {
+            var ensured = await UserSearchService.EnsureUserAsync(_coOwnerSelection.Username);
+            if (ensured is null)
+            {
+                _message = "Could not create local account for the selected AD user.";
+                _messageIsError = true;
+                return;
+            }
+            targetUserId = ensured.Id;
+        }
+
+        var ids = _event.CoOwners.Select(o => o.UserId).ToList();
+        if (!ids.Contains(targetUserId))
+            ids.Add(targetUserId);
+
+        await SaveCoOwners(ids, $"Added {_coOwnerSelection.DisplayName} as a co-owner.");
+        _coOwnerSelection = null;
+    }
+
+    private async Task RemoveCoOwner(int userId)
+    {
+        if (_event is null) return;
+
+        var ids = _event.CoOwners.Select(o => o.UserId).Where(id => id != userId).ToList();
+        await SaveCoOwners(ids, "Co-owner removed.");
+    }
+
+    private async Task SaveCoOwners(List<int> userIds, string successMessage)
+    {
+        var (success, error) = await EventService.SetCoOwnersAsync(EventId, _currentUserId, userIds);
+        _message = success ? successMessage : error;
         _messageIsError = !success;
         await LoadEvent();
     }

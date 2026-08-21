@@ -14,6 +14,7 @@ public class EventService : IEventService
     private readonly RecurrenceExpander _expander;
     private readonly ICalendarInviteService _calendarService;
     private readonly RecurrenceSettings _recurrenceSettings;
+    private readonly GraphApiSettings _graphSettings;
     private readonly IClock _clock;
     private readonly ILogger<EventService> _logger;
     private readonly CalendarUpdateNotifier _notifier;
@@ -23,6 +24,7 @@ public class EventService : IEventService
         RecurrenceExpander expander,
         ICalendarInviteService calendarService,
         IOptions<RecurrenceSettings> recurrenceSettings,
+        IOptions<GraphApiSettings> graphSettings,
         IClock clock,
         ILogger<EventService> logger,
         CalendarUpdateNotifier notifier)
@@ -31,6 +33,7 @@ public class EventService : IEventService
         _expander = expander;
         _calendarService = calendarService;
         _recurrenceSettings = recurrenceSettings.Value;
+        _graphSettings = graphSettings.Value;
         _clock = clock;
         _logger = logger;
         _notifier = notifier;
@@ -44,10 +47,42 @@ public class EventService : IEventService
         return Now.InZone(zone).LocalDateTime;
     }
 
-    public async Task<Event> CreateEventAsync(Event evt, int ownerUserId)
+    /// <summary>
+    /// The creator and every co-owner have identical management rights. Callers must have loaded
+    /// CoOwners, or co-owners silently lose access.
+    /// </summary>
+    private static bool CanManage(Event evt, int userId) =>
+        evt.OwnerUserId == userId || evt.CoOwners.Any(o => o.UserId == userId);
+
+    /// <summary>How much runway is left before a series range gets rolled forward.</summary>
+    private const int SeriesRenewalLeadDays = 30;
+
+    /// <summary>
+    /// How far out a workshop's Graph series may currently run. Rolled forward by
+    /// RecurrenceExpansionBackgroundService as the booking window advances.
+    /// </summary>
+    private LocalDate SeriesWindowEnd(Event evt) =>
+        NowInEventTimeZone(evt).Date.PlusDays(_graphSettings.RoomBookingWindowDays);
+
+    /// <summary>Every owner of the event: the creator first, then co-owners.</summary>
+    private static async Task<List<AppUser>> LoadOwnersAsync(AppDbContext db, Event evt)
+    {
+        var ids = new List<int> { evt.OwnerUserId };
+        ids.AddRange(evt.CoOwners.Select(o => o.UserId).Where(id => id != evt.OwnerUserId));
+
+        var users = await db.Users.Where(u => ids.Contains(u.Id)).ToListAsync();
+        return ids.Select(id => users.First(u => u.Id == id)).ToList();
+    }
+
+    public async Task<Event> CreateEventAsync(Event evt, int ownerUserId, List<int>? coOwnerUserIds = null)
     {
         if (evt.EndTime.CompareTo(evt.StartTime) <= 0)
             throw new ArgumentException("End time must be after start time.");
+
+        // A numbered Graph recurrence range cannot be rolled forward as the room booking window
+        // advances, so workshops use an end-date range only. See GraphRecurrenceMapper.
+        if (evt.EventType == EventType.Workshop && evt.Recurrence?.MaxOccurrences is not null)
+            throw new ArgumentException("Workshops cannot use a maximum occurrence count. Set a recurrence end date instead.");
 
         await using var db = await _dbFactory.CreateDbContextAsync();
 
@@ -61,6 +96,19 @@ public class EventService : IEventService
 
         db.Events.Add(evt);
         await db.SaveChangesAsync();
+
+        // Co-owners, excluding the creator who is always an owner via OwnerUserId
+        var coOwnerIds = (coOwnerUserIds ?? new List<int>())
+            .Where(id => id != ownerUserId)
+            .Distinct()
+            .ToList();
+
+        foreach (var coOwnerId in coOwnerIds)
+        {
+            var coOwner = new EventOwner { EventId = evt.Id, UserId = coOwnerId };
+            db.EventOwners.Add(coOwner);
+            evt.CoOwners.Add(coOwner);
+        }
 
         // Generate occurrences
         var nowInTz = NowInEventTimeZone(evt);
@@ -78,6 +126,26 @@ public class EventService : IEventService
         }
 
         await db.SaveChangesAsync();
+
+        // A workshop's meeting exists from creation with the owning team on it, rather than being
+        // created lazily by the first signup the way office hours are.
+        if (evt.EventType == EventType.Workshop)
+        {
+            try
+            {
+                var owners = await LoadOwnersAsync(db, evt);
+                var windowEnd = SeriesWindowEnd(evt);
+                evt.GraphSeriesId = await _calendarService.CreateSeriesAsync(evt, owners, windowEnd);
+                evt.GraphSeriesWindowEnd = windowEnd;
+                await db.SaveChangesAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to create Teams series for workshop {EventId} ('{Title}')",
+                    evt.Id, evt.Title);
+            }
+        }
+
         _notifier.Notify();
         return evt;
     }
@@ -87,6 +155,8 @@ public class EventService : IEventService
         await using var db = await _dbFactory.CreateDbContextAsync();
         return await db.Events
             .Include(e => e.Owner)
+            .Include(e => e.CoOwners)
+                .ThenInclude(o => o.User)
             .Include(e => e.ReminderDefinitions.OrderBy(d => d.DisplayOrder))
             .Include(e => e.Occurrences)
                 .ThenInclude(o => o.Signups)
@@ -104,6 +174,8 @@ public class EventService : IEventService
         await using var db = await _dbFactory.CreateDbContextAsync();
         var query = db.Events
             .Include(e => e.Owner)
+            .Include(e => e.CoOwners)
+                .ThenInclude(o => o.User)
             .Include(e => e.Occurrences)
             .AsQueryable();
 
@@ -125,6 +197,9 @@ public class EventService : IEventService
         return await db.EventOccurrences
             .Include(o => o.Event)
                 .ThenInclude(e => e.Owner)
+            .Include(o => o.Event)
+                .ThenInclude(e => e.CoOwners)
+                    .ThenInclude(co => co.User)
             .Include(o => o.Signups)
             .Include(o => o.Contributors)
                 .ThenInclude(c => c.User)
@@ -139,6 +214,9 @@ public class EventService : IEventService
         return await db.EventOccurrences
             .Include(o => o.Event)
                 .ThenInclude(e => e.Owner)
+            .Include(o => o.Event)
+                .ThenInclude(e => e.CoOwners)
+                    .ThenInclude(co => co.User)
             .Include(o => o.Signups)
                 .ThenInclude(s => s.User)
             .Include(o => o.Contributors)
@@ -148,14 +226,14 @@ public class EventService : IEventService
 
     public async Task<(bool Success, string? Error)> SignUpAsync(int occurrenceId, int userId, string message)
     {
-        if (string.IsNullOrWhiteSpace(message))
-            return (false, "A message is required when signing up.");
-
         await using var db = await _dbFactory.CreateDbContextAsync();
 
         var occurrence = await db.EventOccurrences
             .Include(o => o.Event)
                 .ThenInclude(e => e.Owner)
+            .Include(o => o.Event)
+                .ThenInclude(e => e.CoOwners)
+                    .ThenInclude(co => co.User)
             .Include(o => o.Signups)
             .FirstOrDefaultAsync(o => o.Id == occurrenceId);
 
@@ -164,6 +242,10 @@ public class EventService : IEventService
 
         if (occurrence.Event.EventType == EventType.TechMeeting && !occurrence.IsLightningTalks)
             return (false, "Signups are not available for this occurrence. Contributors are assigned by the owner.");
+
+        // Workshop attendees join an existing meeting, so there is nothing for a message to seed.
+        if (occurrence.Event.EventType != EventType.Workshop && string.IsNullOrWhiteSpace(message))
+            return (false, "A message is required when signing up.");
 
         if (occurrence.IsCancelled)
             return (false, "This occurrence has been cancelled.");
@@ -199,7 +281,11 @@ public class EventService : IEventService
         // Send calendar invite
         try
         {
-            if (string.IsNullOrEmpty(occurrence.GraphEventId))
+            if (occurrence.Event.EventType == EventType.Workshop)
+            {
+                await SyncWorkshopInstanceAttendeesAsync(db, occurrence, allSignups);
+            }
+            else if (string.IsNullOrEmpty(occurrence.GraphEventId))
             {
                 var graphEventId = await _calendarService.CreateMeetingAsync(occurrence, occurrence.Event.Owner, user, allSignups);
                 occurrence.GraphEventId = graphEventId;
@@ -220,6 +306,34 @@ public class EventService : IEventService
         return (true, null);
     }
 
+    /// <summary>
+    /// Pushes the current attendee list onto a workshop occurrence's series instance. Graph records
+    /// the change as an exception on the series, so the rest of the series is untouched. The
+    /// resolved instance id is cached on the occurrence to avoid re-querying instances every time.
+    /// </summary>
+    private async Task SyncWorkshopInstanceAttendeesAsync(
+        AppDbContext db, EventOccurrence occurrence, IReadOnlyList<EventSignup> signups)
+    {
+        if (string.IsNullOrEmpty(occurrence.Event.GraphSeriesId))
+        {
+            _logger.LogWarning("Workshop {EventId} has no Graph series; skipping attendee sync for occurrence {OccurrenceId}",
+                occurrence.EventId, occurrence.Id);
+            return;
+        }
+
+        if (string.IsNullOrEmpty(occurrence.GraphEventId))
+        {
+            occurrence.GraphEventId = await _calendarService.GetInstanceIdAsync(
+                occurrence.Event.GraphSeriesId, occurrence.StartTime, occurrence.Event.TimeZoneId);
+
+            if (string.IsNullOrEmpty(occurrence.GraphEventId)) return;
+            await db.SaveChangesAsync();
+        }
+
+        var owners = await LoadOwnersAsync(db, occurrence.Event);
+        await _calendarService.PatchInstanceAttendeesAsync(occurrence.GraphEventId, owners, signups);
+    }
+
     public async Task<(bool Success, string? Error)> CancelSignUpAsync(int occurrenceId, int userId)
     {
         await using var db = await _dbFactory.CreateDbContextAsync();
@@ -237,10 +351,27 @@ public class EventService : IEventService
         var occurrence = await db.EventOccurrences
             .Include(o => o.Event)
                 .ThenInclude(e => e.Owner)
+            .Include(o => o.Event)
+                .ThenInclude(e => e.CoOwners)
+                    .ThenInclude(co => co.User)
             .Include(o => o.Signups)
                 .ThenInclude(s => s.User)
             .FirstOrDefaultAsync(o => o.Id == occurrenceId);
-        if (!string.IsNullOrEmpty(occurrence?.GraphEventId))
+        if (occurrence?.Event.EventType == EventType.Workshop)
+        {
+            // The owning team keeps the meeting whether or not anyone is signed up, so this only
+            // ever narrows the instance's attendee list.
+            try
+            {
+                await SyncWorkshopInstanceAttendeesAsync(db, occurrence, occurrence.Signups.ToList());
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to update workshop series instance for occurrence {OccurrenceId} (User: {UserId})",
+                    occurrenceId, userId);
+            }
+        }
+        else if (!string.IsNullOrEmpty(occurrence?.GraphEventId))
         {
             try
             {
@@ -276,13 +407,15 @@ public class EventService : IEventService
         var occurrence = await db.EventOccurrences
             .Include(o => o.Event)
                 .ThenInclude(e => e.Owner)
+            .Include(o => o.Event)
+                .ThenInclude(e => e.CoOwners)
             .FirstOrDefaultAsync(o => o.Id == occurrenceId);
 
         if (occurrence is null)
             return (false, "Occurrence not found.");
 
-        if (occurrence.Event.OwnerUserId != userId)
-            return (false, "Only the event owner can cancel occurrences.");
+        if (!CanManage(occurrence.Event, userId))
+            return (false, "Only an event owner can cancel occurrences.");
 
         occurrence.IsCancelled = true;
         await db.SaveChangesAsync();
@@ -315,13 +448,15 @@ public class EventService : IEventService
         var occurrence = await db.EventOccurrences
             .Include(o => o.Event)
                 .ThenInclude(e => e.Owner)
+            .Include(o => o.Event)
+                .ThenInclude(e => e.CoOwners)
             .FirstOrDefaultAsync(o => o.Id == occurrenceId);
 
         if (occurrence is null)
             return (false, "Occurrence not found.");
 
-        if (occurrence.Event.OwnerUserId != userId)
-            return (false, "Only the event owner can uncancel occurrences.");
+        if (!CanManage(occurrence.Event, userId))
+            return (false, "Only an event owner can uncancel occurrences.");
 
         if (!occurrence.IsCancelled)
             return (false, "This occurrence is not cancelled.");
@@ -366,6 +501,7 @@ public class EventService : IEventService
         await using var db = await _dbFactory.CreateDbContextAsync();
 
         var existing = await db.Events
+            .Include(e => e.CoOwners)
             .Include(e => e.Occurrences)
                 .ThenInclude(o => o.Signups)
             .FirstOrDefaultAsync(e => e.Id == updatedEvent.Id);
@@ -373,8 +509,8 @@ public class EventService : IEventService
         if (existing is null)
             return (false, "Event not found.");
 
-        if (existing.OwnerUserId != userId)
-            return (false, "Only the event owner can modify this event.");
+        if (!CanManage(existing, userId))
+            return (false, "Only an event owner can modify this event.");
 
         if (updatedEvent.EndTime.CompareTo(updatedEvent.StartTime) <= 0)
             return (false, "End time must be after start time.");
@@ -436,6 +572,7 @@ public class EventService : IEventService
 
         var existing = await db.Events
             .Include(e => e.Owner)
+            .Include(e => e.CoOwners)
             .Include(e => e.Occurrences)
                 .ThenInclude(o => o.Signups)
             .FirstOrDefaultAsync(e => e.Id == eventId);
@@ -443,20 +580,36 @@ public class EventService : IEventService
         if (existing is null)
             return (false, "Event not found.");
 
-        if (existing.OwnerUserId != userId)
-            return (false, "Only the event owner can delete this event.");
+        if (!CanManage(existing, userId))
+            return (false, "Only an event owner can delete this event.");
 
-        // Cancel calendar invites for non-cancelled occurrences
-        foreach (var occ in existing.Occurrences.Where(o => !o.IsCancelled && !string.IsNullOrEmpty(o.GraphEventId)))
+        if (!string.IsNullOrEmpty(existing.GraphSeriesId))
         {
+            // One series covers every occurrence, so cancelling it once removes them all.
             try
             {
-                await _calendarService.CancelMeetingAsync(occ.GraphEventId!, existing.Owner);
+                await _calendarService.CancelMeetingAsync(existing.GraphSeriesId, existing.Owner);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to cancel calendar invite for occurrence {OccurrenceId} (Event: {EventTitle}, GraphEventId: {GraphEventId})",
-                    occ.Id, existing.Title, occ.GraphEventId);
+                _logger.LogError(ex, "Failed to cancel Teams series for event {EventId} ('{Title}', GraphSeriesId: {GraphSeriesId})",
+                    existing.Id, existing.Title, existing.GraphSeriesId);
+            }
+        }
+        else
+        {
+            // Cancel calendar invites for non-cancelled occurrences
+            foreach (var occ in existing.Occurrences.Where(o => !o.IsCancelled && !string.IsNullOrEmpty(o.GraphEventId)))
+            {
+                try
+                {
+                    await _calendarService.CancelMeetingAsync(occ.GraphEventId!, existing.Owner);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to cancel calendar invite for occurrence {OccurrenceId} (Event: {EventTitle}, GraphEventId: {GraphEventId})",
+                        occ.Id, existing.Title, occ.GraphEventId);
+                }
             }
         }
 
@@ -471,10 +624,13 @@ public class EventService : IEventService
     {
         await using var db = await _dbFactory.CreateDbContextAsync();
 
-        var evt = await db.Events.FindAsync(eventId);
+        var evt = await db.Events
+            .Include(e => e.CoOwners)
+            .FirstOrDefaultAsync(e => e.Id == eventId);
         if (evt is null)
             return (false, "Event not found.");
 
+        // Transfer stays creator-only. Co-owners manage the event but cannot reassign who owns it.
         if (evt.OwnerUserId != currentOwnerId)
             return (false, "Only the current owner can transfer ownership.");
 
@@ -484,7 +640,133 @@ public class EventService : IEventService
 
         evt.OwnerUserId = newOwnerId;
         evt.UpdatedAt = Now;
+
+        // The new owner is now an owner via OwnerUserId, so a co-owner row for them is redundant.
+        var redundant = evt.CoOwners.Where(o => o.UserId == newOwnerId).ToList();
+        if (redundant.Count > 0)
+            db.EventOwners.RemoveRange(redundant);
+
         await db.SaveChangesAsync();
+
+        _notifier.Notify();
+        return (true, null);
+    }
+
+    /// <summary>
+    /// Rolls the recurrence range forward on any workshop series that is close to lapsing. Room
+    /// mailboxes refuse bookings beyond BookingWindowInDays, so the series never runs further out
+    /// than RoomBookingWindowDays and instead creeps forward as time passes. Patching the range
+    /// re-sends the update to the resource attendee, which is what makes the room evaluate the newly
+    /// added dates.
+    /// </summary>
+    /// <returns>How many series were extended.</returns>
+    public async Task<int> ExtendExpiringWorkshopSeriesAsync(CancellationToken ct = default)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+
+        var candidates = await db.Events
+            .Include(e => e.CoOwners)
+            .Where(e => e.EventType == EventType.Workshop
+                && e.GraphSeriesId != null
+                && e.Recurrence != null)
+            .ToListAsync(ct);
+
+        var extended = 0;
+
+        foreach (var evt in candidates)
+        {
+            var target = SeriesWindowEnd(evt);
+            var current = evt.GraphSeriesWindowEnd;
+
+            // Nothing to do until the current range is inside the renewal lead time.
+            if (current is not null
+                && current.Value.CompareTo(NowInEventTimeZone(evt).Date.PlusDays(SeriesRenewalLeadDays)) > 0)
+                continue;
+
+            // A workshop that ends inside the current range has no further dates to book.
+            var recurrenceEnd = evt.Recurrence!.RecurrenceEndDate;
+            if (recurrenceEnd is not null && current is not null
+                && recurrenceEnd.Value.CompareTo(current.Value) <= 0)
+                continue;
+
+            if (current is not null && target.CompareTo(current.Value) <= 0)
+                continue;
+
+            try
+            {
+                await _calendarService.ExtendSeriesRangeAsync(evt.GraphSeriesId!, evt, target);
+                evt.GraphSeriesWindowEnd = target;
+                evt.UpdatedAt = Now;
+                await db.SaveChangesAsync(ct);
+                extended++;
+            }
+            catch (Exception ex)
+            {
+                // Leave GraphSeriesWindowEnd alone so the next pass retries this series.
+                _logger.LogError(ex, "Failed to extend Teams series for workshop {EventId} ('{Title}') to {WindowEnd}",
+                    evt.Id, evt.Title, target);
+            }
+        }
+
+        if (extended > 0)
+            _notifier.Notify();
+
+        return extended;
+    }
+
+    /// <summary>
+    /// Replaces the co-owner list. The creator is always an owner through Event.OwnerUserId and
+    /// must not appear here, so an empty list leaves them as the sole owner.
+    /// </summary>
+    public async Task<(bool Success, string? Error)> SetCoOwnersAsync(int eventId, int userId, List<int> coOwnerUserIds)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync();
+
+        var evt = await db.Events
+            .Include(e => e.CoOwners)
+            .FirstOrDefaultAsync(e => e.Id == eventId);
+
+        if (evt is null)
+            return (false, "Event not found.");
+
+        if (!CanManage(evt, userId))
+            return (false, "Only an event owner can manage co-owners.");
+
+        var requested = coOwnerUserIds.Distinct().ToList();
+
+        if (requested.Contains(evt.OwnerUserId))
+            return (false, "The event creator is already an owner and cannot be listed as a co-owner.");
+
+        var foundCount = await db.Users.CountAsync(u => requested.Contains(u.Id));
+        if (foundCount != requested.Count)
+            return (false, "One or more users were not found.");
+
+        db.EventOwners.RemoveRange(evt.CoOwners.Where(o => !requested.Contains(o.UserId)));
+
+        var existingIds = evt.CoOwners.Select(o => o.UserId).ToHashSet();
+        foreach (var id in requested.Where(id => !existingIds.Contains(id)))
+        {
+            db.EventOwners.Add(new EventOwner { EventId = eventId, UserId = id });
+        }
+
+        evt.UpdatedAt = Now;
+        await db.SaveChangesAsync();
+
+        // Reload so the series attendee list reflects what was just saved.
+        if (!string.IsNullOrEmpty(evt.GraphSeriesId))
+        {
+            try
+            {
+                await db.Entry(evt).Collection(e => e.CoOwners).LoadAsync();
+                var owners = await LoadOwnersAsync(db, evt);
+                await _calendarService.UpdateSeriesOwnersAsync(evt.GraphSeriesId, owners);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to update Teams series owners for event {EventId} (GraphSeriesId: {GraphSeriesId})",
+                    eventId, evt.GraphSeriesId);
+            }
+        }
 
         _notifier.Notify();
         return (true, null);
@@ -498,6 +780,7 @@ public class EventService : IEventService
 
         var occurrence = await db.EventOccurrences
             .Include(o => o.Event)
+                .ThenInclude(e => e.CoOwners)
             .Include(o => o.Contributors)
             .FirstOrDefaultAsync(o => o.Id == occurrenceId);
 
@@ -507,8 +790,8 @@ public class EventService : IEventService
         if (occurrence.Event.EventType != EventType.TechMeeting)
             return (false, "Contributors can only be assigned to tech meeting events.");
 
-        if (occurrence.Event.OwnerUserId != userId)
-            return (false, "Only the event owner can assign contributors.");
+        if (!CanManage(occurrence.Event, userId))
+            return (false, "Only an event owner can assign contributors.");
 
         if (occurrence.IsLightningTalks)
             return (false, "Cannot assign contributors to a lightning talks occurrence.");
@@ -564,6 +847,7 @@ public class EventService : IEventService
 
         var occurrence = await db.EventOccurrences
             .Include(o => o.Event)
+                .ThenInclude(e => e.CoOwners)
             .Include(o => o.Contributors)
             .Include(o => o.Signups)
             .FirstOrDefaultAsync(o => o.Id == occurrenceId);
@@ -574,8 +858,8 @@ public class EventService : IEventService
         if (occurrence.Event.EventType != EventType.TechMeeting)
             return (false, "Lightning talks are only available for tech meeting events.");
 
-        if (occurrence.Event.OwnerUserId != userId)
-            return (false, "Only the event owner can toggle lightning talks.");
+        if (!CanManage(occurrence.Event, userId))
+            return (false, "Only an event owner can toggle lightning talks.");
 
         var owner = await db.Users.FindAsync(occurrence.Event.OwnerUserId);
         var stateChanging = occurrence.IsLightningTalks != isLightningTalks;
@@ -614,25 +898,26 @@ public class EventService : IEventService
 
         var occurrence = await db.EventOccurrences
             .Include(o => o.Event)
+                .ThenInclude(e => e.CoOwners)
             .Include(o => o.Contributors)
             .FirstOrDefaultAsync(o => o.Id == occurrenceId);
 
         if (occurrence is null)
             return (false, "Occurrence not found.");
 
-        if (occurrence.Event.EventType != EventType.TechMeeting)
-            return (false, "Occurrence names can only be edited for tech meeting events.");
+        if (occurrence.Event.EventType is not (EventType.TechMeeting or EventType.Workshop))
+            return (false, "Occurrence names can only be edited for tech meeting and workshop events.");
 
-        var isOwner = occurrence.Event.OwnerUserId == userId;
+        var isOwner = CanManage(occurrence.Event, userId);
         var isContributor = occurrence.Contributors.Any(c => c.UserId == userId);
 
         if (!isOwner && !isContributor)
-            return (false, "Only the event owner or an assigned contributor can edit the occurrence name.");
+            return (false, "Only an event owner or an assigned contributor can edit the occurrence name.");
 
         if (namePrefix is not null)
         {
             if (!isOwner)
-                return (false, "Only the event owner can edit the name prefix.");
+                return (false, "Only an event owner can edit the name prefix.");
             occurrence.NamePrefix = namePrefix;
         }
 
@@ -660,14 +945,15 @@ public class EventService : IEventService
         await using var db = await _dbFactory.CreateDbContextAsync();
 
         var evt = await db.Events
+            .Include(e => e.CoOwners)
             .Include(e => e.ReminderDefinitions)
             .FirstOrDefaultAsync(e => e.Id == eventId);
 
         if (evt is null)
             return (false, "Event not found.");
 
-        if (evt.OwnerUserId != userId)
-            return (false, "Only the event owner can manage reminders.");
+        if (!CanManage(evt, userId))
+            return (false, "Only an event owner can manage reminders.");
 
         if (evt.EventType != EventType.TechMeeting)
             return (false, "Reminders are only available for tech meeting events.");
@@ -714,14 +1000,15 @@ public class EventService : IEventService
 
         var occurrence = await db.EventOccurrences
             .Include(o => o.Event)
+                .ThenInclude(e => e.CoOwners)
             .Include(o => o.ReminderValues)
             .FirstOrDefaultAsync(o => o.Id == occurrenceId);
 
         if (occurrence is null)
             return (false, "Occurrence not found.");
 
-        if (occurrence.Event.OwnerUserId != userId)
-            return (false, "Only the event owner can set reminder values.");
+        if (!CanManage(occurrence.Event, userId))
+            return (false, "Only an event owner can set reminder values.");
 
         var existing = occurrence.ReminderValues.FirstOrDefault(v => v.ReminderDefinitionId == reminderDefinitionId);
         if (existing is not null)

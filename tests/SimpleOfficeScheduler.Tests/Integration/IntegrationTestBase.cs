@@ -107,7 +107,8 @@ public class IntegrationTestBase : IAsyncLifetime
         int capacity = 5,
         string? timeZoneId = null,
         RecurrencePatternDto? recurrence = null,
-        EventType eventType = EventType.OfficeHours)
+        EventType eventType = EventType.OfficeHours,
+        IEnumerable<int>? coOwnerIds = null)
     {
         var start = startTime ?? LocalDateTime.FromDateTime(DateTime.Now.Date.AddDays(1).AddHours(9));
         var end = endTime ?? start.PlusHours(1);
@@ -121,7 +122,8 @@ public class IntegrationTestBase : IAsyncLifetime
             Capacity = capacity,
             TimeZoneId = timeZoneId,
             EventType = eventType,
-            Recurrence = recurrence
+            Recurrence = recurrence,
+            CoOwnerIds = coOwnerIds?.ToList() ?? new List<int>()
         };
 
         var response = await Client.PostAsJsonAsync("/api/events", request, JsonOptions);
