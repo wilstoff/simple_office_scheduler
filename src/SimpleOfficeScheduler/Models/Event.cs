@@ -32,6 +32,10 @@ public class Event
     /// </summary>
     public LocalDate? GraphSeriesWindowEnd { get; set; }
 
+    /// <summary>Mailbox of the booked conference room, or null for no room.</summary>
+    public string? RoomEmail { get; set; }
+    public string? RoomDisplayName { get; set; }
+
     public Instant CreatedAt { get; set; }
     public Instant UpdatedAt { get; set; }
 

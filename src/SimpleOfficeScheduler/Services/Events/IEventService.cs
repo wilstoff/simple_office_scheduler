@@ -18,6 +18,8 @@ public interface IEventService
     Task<(bool Success, string? Error)> TransferOwnershipAsync(int eventId, int currentOwnerId, int newOwnerId);
     Task<(bool Success, string? Error)> SetCoOwnersAsync(int eventId, int userId, List<int> coOwnerUserIds);
     Task<int> ExtendExpiringWorkshopSeriesAsync(CancellationToken ct = default);
+    Task<(bool Success, string? Error)> SetRoomAsync(int eventId, int userId, string? roomEmail);
+    Task<int> RefreshRoomBookingStatusAsync(CancellationToken ct = default);
     Task<(bool Success, string? Error)> DeleteEventAsync(int eventId, int userId);
     Task<(bool Success, string? Error)> SetContributorsAsync(int occurrenceId, int userId, List<int> contributorUserIds);
     Task<(bool Success, string? Error)> ToggleLightningTalksAsync(int occurrenceId, int userId, bool isLightningTalks, int? capacity = null);

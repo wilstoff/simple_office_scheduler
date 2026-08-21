@@ -5,6 +5,7 @@ using SimpleOfficeScheduler.Data;
 using SimpleOfficeScheduler.Models;
 using SimpleOfficeScheduler.Services.Calendar;
 using SimpleOfficeScheduler.Services.Recurrence;
+using SimpleOfficeScheduler.Services.Rooms;
 
 namespace SimpleOfficeScheduler.Services.Events;
 
@@ -13,6 +14,7 @@ public class EventService : IEventService
     private readonly IDbContextFactory<AppDbContext> _dbFactory;
     private readonly RecurrenceExpander _expander;
     private readonly ICalendarInviteService _calendarService;
+    private readonly IRoomService _roomService;
     private readonly RecurrenceSettings _recurrenceSettings;
     private readonly GraphApiSettings _graphSettings;
     private readonly IClock _clock;
@@ -23,6 +25,7 @@ public class EventService : IEventService
         IDbContextFactory<AppDbContext> dbFactory,
         RecurrenceExpander expander,
         ICalendarInviteService calendarService,
+        IRoomService roomService,
         IOptions<RecurrenceSettings> recurrenceSettings,
         IOptions<GraphApiSettings> graphSettings,
         IClock clock,
@@ -32,6 +35,7 @@ public class EventService : IEventService
         _dbFactory = dbFactory;
         _expander = expander;
         _calendarService = calendarService;
+        _roomService = roomService;
         _recurrenceSettings = recurrenceSettings.Value;
         _graphSettings = graphSettings.Value;
         _clock = clock;
@@ -64,11 +68,32 @@ public class EventService : IEventService
     private LocalDate SeriesWindowEnd(Event evt) =>
         NowInEventTimeZone(evt).Date.PlusDays(_graphSettings.RoomBookingWindowDays);
 
+    /// <summary>
+    /// Resolves a room mailbox against the room list. Returns null for no room; throws when the
+    /// address is not a known room, so a typo fails loudly instead of silently booking nothing.
+    /// </summary>
+    private async Task<Room?> ResolveRoomAsync(string? roomEmail, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(roomEmail)) return null;
+
+        var rooms = await _roomService.GetRoomsAsync(ct);
+        var room = rooms.FirstOrDefault(r =>
+            string.Equals(r.Email, roomEmail, StringComparison.OrdinalIgnoreCase));
+
+        if (room is null)
+            throw new ArgumentException($"'{roomEmail}' is not a known conference room.");
+
+        return room;
+    }
+
     /// <summary>Every owner of the event: the creator first, then co-owners.</summary>
     private static async Task<List<AppUser>> LoadOwnersAsync(AppDbContext db, Event evt)
     {
         var ids = new List<int> { evt.OwnerUserId };
-        ids.AddRange(evt.CoOwners.Select(o => o.UserId).Where(id => id != evt.OwnerUserId));
+        ids.AddRange(evt.CoOwners
+            .Select(o => o.UserId)
+            .Where(id => id != evt.OwnerUserId)
+            .Distinct());
 
         var users = await db.Users.Where(u => ids.Contains(u.Id)).ToListAsync();
         return ids.Select(id => users.First(u => u.Id == id)).ToList();
@@ -83,6 +108,10 @@ public class EventService : IEventService
         // advances, so workshops use an end-date range only. See GraphRecurrenceMapper.
         if (evt.EventType == EventType.Workshop && evt.Recurrence?.MaxOccurrences is not null)
             throw new ArgumentException("Workshops cannot use a maximum occurrence count. Set a recurrence end date instead.");
+
+        // Resolved before anything is written, so an unknown room fails without leaving an event.
+        var room = await ResolveRoomAsync(evt.RoomEmail);
+        evt.RoomDisplayName = room?.DisplayName;
 
         await using var db = await _dbFactory.CreateDbContextAsync();
 
@@ -105,9 +134,9 @@ public class EventService : IEventService
 
         foreach (var coOwnerId in coOwnerIds)
         {
-            var coOwner = new EventOwner { EventId = evt.Id, UserId = coOwnerId };
-            db.EventOwners.Add(coOwner);
-            evt.CoOwners.Add(coOwner);
+            // Adding to the DbSet is enough: EF's relationship fixup puts the row on
+            // evt.CoOwners too, and adding it by hand as well duplicates it on the invite.
+            db.EventOwners.Add(new EventOwner { EventId = evt.Id, UserId = coOwnerId });
         }
 
         // Generate occurrences
@@ -121,7 +150,8 @@ public class EventService : IEventService
             {
                 EventId = evt.Id,
                 StartTime = start,
-                EndTime = end
+                EndTime = end,
+                RoomBookingStatus = room is null ? RoomBookingStatus.None : RoomBookingStatus.Pending
             });
         }
 
@@ -135,7 +165,7 @@ public class EventService : IEventService
             {
                 var owners = await LoadOwnersAsync(db, evt);
                 var windowEnd = SeriesWindowEnd(evt);
-                evt.GraphSeriesId = await _calendarService.CreateSeriesAsync(evt, owners, windowEnd);
+                evt.GraphSeriesId = await _calendarService.CreateSeriesAsync(evt, owners, windowEnd, room);
                 evt.GraphSeriesWindowEnd = windowEnd;
                 await db.SaveChangesAsync();
             }
@@ -650,6 +680,132 @@ public class EventService : IEventService
 
         _notifier.Notify();
         return (true, null);
+    }
+
+    /// <summary>
+    /// Changes or clears the event's room. Future occurrences go back to Pending because the new
+    /// room has to accept the booking on its own terms; a room that declines shows up through
+    /// RefreshRoomBookingStatusAsync rather than being assumed to have worked.
+    /// </summary>
+    public async Task<(bool Success, string? Error)> SetRoomAsync(int eventId, int userId, string? roomEmail)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync();
+
+        var evt = await db.Events
+            .Include(e => e.CoOwners)
+            .Include(e => e.Occurrences)
+            .FirstOrDefaultAsync(e => e.Id == eventId);
+
+        if (evt is null)
+            return (false, "Event not found.");
+
+        if (!CanManage(evt, userId))
+            return (false, "Only an event owner can change the room.");
+
+        Room? room;
+        try
+        {
+            room = await ResolveRoomAsync(roomEmail);
+        }
+        catch (ArgumentException ex)
+        {
+            return (false, ex.Message);
+        }
+
+        evt.RoomEmail = room?.Email;
+        evt.RoomDisplayName = room?.DisplayName;
+        evt.UpdatedAt = Now;
+
+        var nowInTz = NowInEventTimeZone(evt);
+        foreach (var occ in evt.Occurrences.Where(o => o.StartTime.CompareTo(nowInTz) > 0))
+        {
+            occ.RoomBookingStatus = room is null ? RoomBookingStatus.None : RoomBookingStatus.Pending;
+            occ.RoomBookingError = null;
+        }
+
+        await db.SaveChangesAsync();
+
+        try
+        {
+            if (!string.IsNullOrEmpty(evt.GraphSeriesId))
+            {
+                await _calendarService.UpdateSeriesRoomAsync(evt.GraphSeriesId, room);
+            }
+            else
+            {
+                // Office hours and tech meetings create a Graph event per occurrence, so the room
+                // is applied to each one that already exists.
+                foreach (var occ in evt.Occurrences.Where(o =>
+                    !o.IsCancelled && !string.IsNullOrEmpty(o.GraphEventId)))
+                {
+                    await _calendarService.UpdateSeriesRoomAsync(occ.GraphEventId!, room);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to update the room on the calendar for event {EventId} (Room: {Room})",
+                eventId, room?.Email ?? "(none)");
+
+            foreach (var occ in evt.Occurrences.Where(o => o.RoomBookingStatus == RoomBookingStatus.Pending))
+            {
+                occ.RoomBookingStatus = RoomBookingStatus.Failed;
+                occ.RoomBookingError = ex.Message;
+            }
+            await db.SaveChangesAsync();
+        }
+
+        _notifier.Notify();
+        return (true, null);
+    }
+
+    /// <summary>
+    /// Reads back what each room mailbox did with its booking. Rooms reply asynchronously, so a
+    /// Pending occurrence stays Pending until the booking attendant responds.
+    /// </summary>
+    /// <returns>How many occurrences changed status.</returns>
+    public async Task<int> RefreshRoomBookingStatusAsync(CancellationToken ct = default)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+
+        var pending = await db.EventOccurrences
+            .Include(o => o.Event)
+            .Where(o => o.RoomBookingStatus == RoomBookingStatus.Pending
+                && !o.IsCancelled
+                && o.Event.RoomEmail != null)
+            .ToListAsync(ct);
+
+        var changed = 0;
+
+        foreach (var occ in pending)
+        {
+            // A workshop instance without its own exception is covered by the series master.
+            var graphId = occ.GraphEventId ?? occ.Event.GraphSeriesId;
+            if (string.IsNullOrEmpty(graphId)) continue;
+
+            try
+            {
+                var outcome = await _calendarService.GetRoomResponseAsync(graphId, occ.Event.RoomEmail!);
+                if (outcome is null) continue;
+
+                occ.RoomBookingStatus = outcome.Status;
+                occ.RoomBookingError = outcome.Error;
+                changed++;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to read the room response for occurrence {OccurrenceId} (Event: {EventTitle})",
+                    occ.Id, occ.Event.Title);
+            }
+        }
+
+        if (changed > 0)
+        {
+            await db.SaveChangesAsync(ct);
+            _notifier.Notify();
+        }
+
+        return changed;
     }
 
     /// <summary>

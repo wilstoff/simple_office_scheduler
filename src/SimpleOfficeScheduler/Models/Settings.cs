@@ -25,6 +25,18 @@ public class GraphApiSettings
     /// this stays a little under it. The series range is rolled forward as time passes.
     /// </summary>
     public int RoomBookingWindowDays { get; set; } = 170;
+
+    /// <summary>
+    /// Mailbox of a room list to scope room discovery to. When empty, every room in the tenant is
+    /// listed. Either way this needs the Place.Read.All application permission.
+    /// </summary>
+    public string? RoomListEmail { get; set; }
+
+    /// <summary>
+    /// Rooms to offer when Graph cannot supply them, either because GraphApi is unconfigured or
+    /// because Place.Read.All has not been consented to.
+    /// </summary>
+    public List<ConfiguredRoom> Rooms { get; set; } = new();
 }
 
 public class SeedUserSettings

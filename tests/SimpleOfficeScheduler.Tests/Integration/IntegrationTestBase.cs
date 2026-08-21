@@ -38,6 +38,12 @@ public class IntegrationTestBase : IAsyncLifetime
                 // Point the factory at a unique per-test SQLite file via config so
                 // Program.cs's AddDbContextFactory call picks it up.
                 builder.UseSetting("ConnectionStrings:DefaultConnection", $"Data Source={_dbPath}");
+                builder.UseSetting("GraphApi:Rooms:0:Email", "room-a@test.local");
+                builder.UseSetting("GraphApi:Rooms:0:DisplayName", "Test Room A");
+                builder.UseSetting("GraphApi:Rooms:0:Capacity", "8");
+                builder.UseSetting("GraphApi:Rooms:1:Email", "room-b@test.local");
+                builder.UseSetting("GraphApi:Rooms:1:DisplayName", "Test Room B");
+                builder.UseSetting("GraphApi:Rooms:1:Capacity", "20");
                 builder.ConfigureServices(services =>
                 {
                     // Remove the background service to avoid interference
@@ -108,7 +114,8 @@ public class IntegrationTestBase : IAsyncLifetime
         string? timeZoneId = null,
         RecurrencePatternDto? recurrence = null,
         EventType eventType = EventType.OfficeHours,
-        IEnumerable<int>? coOwnerIds = null)
+        IEnumerable<int>? coOwnerIds = null,
+        string? roomEmail = null)
     {
         var start = startTime ?? LocalDateTime.FromDateTime(DateTime.Now.Date.AddDays(1).AddHours(9));
         var end = endTime ?? start.PlusHours(1);
@@ -123,7 +130,8 @@ public class IntegrationTestBase : IAsyncLifetime
             TimeZoneId = timeZoneId,
             EventType = eventType,
             Recurrence = recurrence,
-            CoOwnerIds = coOwnerIds?.ToList() ?? new List<int>()
+            CoOwnerIds = coOwnerIds?.ToList() ?? new List<int>(),
+            RoomEmail = roomEmail
         };
 
         var response = await Client.PostAsJsonAsync("/api/events", request, JsonOptions);

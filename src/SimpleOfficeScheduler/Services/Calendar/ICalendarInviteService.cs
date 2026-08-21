@@ -23,7 +23,16 @@ public interface ICalendarInviteService
     /// <paramref name="windowEnd"/> bounds the recurrence range so it stays inside the room
     /// mailbox booking window; it is rolled forward later by ExtendSeriesRangeAsync.
     /// </summary>
-    Task<string> CreateSeriesAsync(Event evt, IReadOnlyList<AppUser> owners, LocalDate windowEnd);
+    Task<string> CreateSeriesAsync(Event evt, IReadOnlyList<AppUser> owners, LocalDate windowEnd, Room? room);
+
+    /// <summary>Replaces the resource attendee and location on the series.</summary>
+    Task UpdateSeriesRoomAsync(string graphSeriesId, Room? room);
+
+    /// <summary>
+    /// Room mailboxes accept or decline after the fact, so booking outcomes are read back rather
+    /// than assumed. Returns null when the response cannot be determined yet.
+    /// </summary>
+    Task<RoomBookingOutcome?> GetRoomResponseAsync(string graphEventId, string roomEmail);
 
     /// <summary>Pushes the series recurrence range end date forward.</summary>
     Task ExtendSeriesRangeAsync(string graphSeriesId, Event evt, LocalDate newWindowEnd);

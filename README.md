@@ -57,10 +57,40 @@ All settings can be overridden with environment variables using the `__` (double
 | `GraphApi__ClientSecret` | *(empty)* | Graph API client secret |
 | `GraphApi__TargetMailbox` | *(empty)* | Shared mailbox to create meetings on (e.g. `simple_office_scheduler@mycompany.com`) |
 | `GraphApi__RoomBookingWindowDays` | `170` | How far ahead a workshop's recurring series may extend (see below) |
+| `GraphApi__RoomListEmail` | *(empty)* | Room list to scope room discovery to. Empty lists every room in the tenant |
+| `GraphApi__Rooms__0__Email` | *(empty)* | Fallback room list, used when Graph cannot supply rooms |
+| `GraphApi__Rooms__0__DisplayName` | *(empty)* | Display name for the fallback room |
+| `GraphApi__Rooms__0__Capacity` | *(empty)* | Seat count, shown in the picker for information only |
 
 When all four settings (`TenantId`, `ClientId`, `ClientSecret`, `TargetMailbox`) are set, the app creates Teams calendar invites via Microsoft Graph on the target mailbox. Use an [Application Access Policy](https://learn.microsoft.com/en-us/graph/auth-limit-mailbox-access) to restrict the app's access to only this mailbox.
 
 When any setting is missing, calendar invite functionality is disabled (no-op).
+
+### Conference rooms
+
+Any event can book a conference room. Three Graph operations are involved, and they need different
+permissions:
+
+| Operation | Graph call | Permission | Blocked by an Application Access Policy? |
+|-----------|-----------|------------|------------------------------------------|
+| List rooms | `GET /places/microsoft.graph.room` | `Place.Read.All` (application, admin consent) | No. Place objects are not mailbox-scoped |
+| Book a room | Resource attendee on the event | None beyond the existing `Calendars.ReadWrite` | No. Already in scope |
+| Free/busy | `POST /users/{TargetMailbox}/calendar/getSchedule` | `Calendars.Read` (application) | Possibly |
+
+Room discovery and booking work with one new consent (`Place.Read.All`) and no Exchange policy
+change. If that consent is missing, the app falls back to the `GraphApi:Rooms` config list.
+
+Free/busy is the one that may not work. The call is made as `TargetMailbox`, which the policy
+permits, but the addresses it asks about are room mailboxes outside the policy scope. Graph reports
+that per schedule through `ScheduleInformation.Error`, and the app treats a response where every
+room errored as "no data" rather than "every room is free": the picker hides the free/busy readout
+instead of advertising booked rooms as open. To make it work, add the room mailboxes to the policy
+scope group, or move to RBAC for Applications with a scope that includes rooms.
+
+Room mailboxes accept or decline asynchronously, so booking is never assumed to have succeeded. The
+app records a per-occurrence status (`Pending`, `Booked`, `Declined`, `Failed`), reads back the
+resource attendee's response on the background pass, and shows a warning on the event page listing
+the dates the room refused.
 
 Workshops are backed by a single Graph recurring series rather than one event per occurrence. Exchange room mailboxes refuse a booking further out than `BookingWindowInDays` (180 days by default), so the series recurrence range only ever runs `RoomBookingWindowDays` ahead of today. A background pass rolls that range forward once it is within 30 days of lapsing, which also re-sends the update to any booked room so it evaluates the newly added dates. Lower `RoomBookingWindowDays` if your rooms use a shorter booking window.
 
@@ -184,6 +214,7 @@ dotnet test
 - Transfer event ownership with searchable user lookup (local DB + Active Directory)
 - Active Directory (LDAP) authentication
 - Microsoft Teams calendar invites via Graph API
+- Conference room booking with free/busy lookup and decline reporting
 - Light/dark theme with per-user persistence
 - Per-user timezone settings
 

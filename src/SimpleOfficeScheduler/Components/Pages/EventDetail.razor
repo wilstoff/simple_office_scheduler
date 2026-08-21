@@ -65,7 +65,48 @@
     <div class="col-md-3">
         <strong>Timezone:</strong> @_event.TimeZoneId
     </div>
+    @if (!string.IsNullOrEmpty(_event.RoomDisplayName))
+    {
+        <div class="col-md-3">
+            <strong>Room:</strong> @_event.RoomDisplayName
+        </div>
+    }
 </div>
+
+@{
+    var roomProblems = _event.Occurrences
+        .Where(o => !o.IsCancelled
+            && o.RoomBookingStatus is RoomBookingStatus.Declined or RoomBookingStatus.Failed)
+        .OrderBy(o => o.StartTime)
+        .ToList();
+}
+@if (roomProblems.Count > 0)
+{
+    <div class="alert alert-warning">
+        <strong>@_event.RoomDisplayName could not be booked for @roomProblems.Count
+            @(roomProblems.Count == 1 ? "date" : "dates").</strong>
+        <ul class="mb-2 mt-1">
+            @foreach (var occ in roomProblems.Take(10))
+            {
+                <li>
+                    @occ.StartTime.ToDateTimeUnspecified().ToString("ddd, MMM dd yyyy h:mm tt")
+                    @if (!string.IsNullOrEmpty(occ.RoomBookingError))
+                    {
+                        <span class="text-muted"> — @occ.RoomBookingError</span>
+                    }
+                </li>
+            }
+        </ul>
+        @if (roomProblems.Count > 10)
+        {
+            <div class="text-muted small mb-2">and @(roomProblems.Count - 10) more.</div>
+        }
+        @if (_isOwner)
+        {
+            <a class="btn btn-sm btn-outline-warning" href="events/@_event.Id/edit">Pick another room</a>
+        }
+    </div>
+}
 
 @if (_isWorkshop)
 {
@@ -227,6 +268,15 @@ else
                             }
                             @startDt.ToString("ddd, MMM dd yyyy h:mm tt")
                             - @endDt.ToString("h:mm tt")
+                            @if (occ.RoomBookingStatus is RoomBookingStatus.Declined or RoomBookingStatus.Failed)
+                            {
+                                <span class="badge bg-warning ms-1"
+                                      title="@occ.RoomBookingError">No room</span>
+                            }
+                            else if (occ.RoomBookingStatus == RoomBookingStatus.Pending)
+                            {
+                                <span class="badge bg-secondary ms-1">Room pending</span>
+                            }
                         </td>
                         <td>
                             @if (occ.IsCancelled)

@@ -21,6 +21,7 @@ public class CreateEventRequest
     public EventType EventType { get; set; } = EventType.OfficeHours;
     public RecurrencePatternDto? Recurrence { get; set; }
     public List<int> CoOwnerIds { get; set; } = new();
+    public string? RoomEmail { get; set; }
 }
 
 public class UpdateEventRequest
@@ -58,6 +59,8 @@ public class EventResponse
     public EventType EventType { get; set; }
     public RecurrencePatternDto? Recurrence { get; set; }
     public List<CoOwnerResponse> CoOwners { get; set; } = new();
+    public string? RoomEmail { get; set; }
+    public string? RoomDisplayName { get; set; }
     public List<OccurrenceResponse> Occurrences { get; set; } = new();
     public List<ReminderDefinitionResponse> ReminderDefinitions { get; set; } = new();
 }
@@ -71,6 +74,23 @@ public class CoOwnerResponse
 public class SetCoOwnersRequest
 {
     public List<int> UserIds { get; set; } = new();
+}
+
+public class SetRoomRequest
+{
+    public string? RoomEmail { get; set; }
+}
+
+public class RoomResponse
+{
+    public string Email { get; set; } = string.Empty;
+    public string DisplayName { get; set; } = string.Empty;
+    public int? Capacity { get; set; }
+    public string? Building { get; set; }
+    public string? FloorLabel { get; set; }
+
+    /// <summary>Null when availability could not be read, which is not the same as free.</summary>
+    public bool? IsBusy { get; set; }
 }
 
 public class OccurrenceResponse
@@ -88,6 +108,8 @@ public class OccurrenceResponse
     public string? NamePrefix { get; set; }
     public string? NameSuffix { get; set; }
     public string DisplayName { get; set; } = string.Empty;
+    public RoomBookingStatus RoomBookingStatus { get; set; }
+    public string? RoomBookingError { get; set; }
     public int SignupCount { get; set; }
     public List<SignupResponse> Signups { get; set; } = new();
     public List<ContributorResponse> Contributors { get; set; } = new();
