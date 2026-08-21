@@ -351,17 +351,27 @@ public class EventService : IEventService
             return;
         }
 
-        if (string.IsNullOrEmpty(occurrence.GraphEventId))
+        // A one-off workshop has no instances to expand: the Graph object created up front IS the
+        // meeting for its single occurrence. Asking Graph for its instances fails outright with
+        // "ExpandSeries can only be performed against a series."
+        var targetId = occurrence.Event.Recurrence is null
+            ? occurrence.Event.GraphSeriesId
+            : occurrence.GraphEventId;
+
+        if (string.IsNullOrEmpty(targetId))
         {
-            occurrence.GraphEventId = await _calendarService.GetInstanceIdAsync(
+            targetId = await _calendarService.GetInstanceIdAsync(
                 occurrence.Event.GraphSeriesId, occurrence.StartTime, occurrence.Event.TimeZoneId);
 
-            if (string.IsNullOrEmpty(occurrence.GraphEventId)) return;
+            if (string.IsNullOrEmpty(targetId)) return;
+
+            // Cache the resolved instance so later signups skip the lookup.
+            occurrence.GraphEventId = targetId;
             await db.SaveChangesAsync();
         }
 
         var owners = await LoadOwnersAsync(db, occurrence.Event);
-        await _calendarService.PatchInstanceAttendeesAsync(occurrence.GraphEventId, owners, signups);
+        await _calendarService.PatchInstanceAttendeesAsync(targetId, owners, signups);
     }
 
     public async Task<(bool Success, string? Error)> CancelSignUpAsync(int occurrenceId, int userId)
