@@ -596,14 +596,65 @@ public class EventService : IEventService
                 {
                     EventId = existing.Id,
                     StartTime = start,
-                    EndTime = end
+                    EndTime = end,
+                    RoomBookingStatus = existing.RoomEmail is null
+                        ? RoomBookingStatus.None
+                        : RoomBookingStatus.Pending
                 });
             }
         }
 
+        // Cached instance ids belong to the old schedule, so drop them and let the next signup
+        // resolve against the updated series.
+        foreach (var occ in existing.Occurrences.Where(o =>
+            o.StartTime.CompareTo(nowInTz) > 0 && o.GraphEventId is not null))
+        {
+            occ.GraphEventId = null;
+        }
+
         await db.SaveChangesAsync();
+
+        // Without this the app and Graph drift apart: the occurrence list changes while attendees
+        // keep whatever meeting was created originally. Turning a workshop recurring after the fact
+        // appeared to do nothing for exactly this reason.
+        if (existing.EventType == EventType.Workshop)
+            await SyncWorkshopSeriesAsync(db, existing);
+
         _notifier.Notify();
         return (true, null);
+    }
+
+    /// <summary>
+    /// Pushes a workshop's current schedule onto its Graph series, creating the series first if it
+    /// does not have one yet. A missing series is what an event is left with when the Graph call
+    /// failed at creation time, so an edit is the natural place to recover.
+    /// </summary>
+    private async Task SyncWorkshopSeriesAsync(AppDbContext db, Event evt)
+    {
+        var windowEnd = SeriesWindowEnd(evt);
+
+        try
+        {
+            if (string.IsNullOrEmpty(evt.GraphSeriesId))
+            {
+                // Callers load CoOwners as part of the permission check, so no extra query here.
+                var owners = await LoadOwnersAsync(db, evt);
+                var room = await ResolveRoomAsync(evt.RoomEmail);
+                evt.GraphSeriesId = await _calendarService.CreateSeriesAsync(evt, owners, windowEnd, room);
+            }
+            else
+            {
+                await _calendarService.UpdateSeriesScheduleAsync(evt.GraphSeriesId, evt, windowEnd);
+            }
+
+            evt.GraphSeriesWindowEnd = windowEnd;
+            await db.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to sync the Teams series for workshop {EventId} ('{Title}', GraphSeriesId: {GraphSeriesId})",
+                evt.Id, evt.Title, evt.GraphSeriesId);
+        }
     }
 
     public async Task<(bool Success, string? Error)> DeleteEventAsync(int eventId, int userId)
