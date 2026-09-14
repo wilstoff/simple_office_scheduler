@@ -5,11 +5,16 @@ namespace SimpleOfficeScheduler.Services.Calendar;
 
 public interface ICalendarInviteService
 {
-    Task<string> CreateMeetingAsync(EventOccurrence occurrence, AppUser owner, AppUser signee, IReadOnlyList<EventSignup> allSignups);
+    /// <summary>
+    /// Creates the standalone meeting for one occurrence of an office hours event. Office hours and
+    /// tech meetings have no meeting until the first signup, so a room chosen before then is booked
+    /// here rather than patched on afterwards.
+    /// </summary>
+    Task<string> CreateMeetingAsync(EventOccurrence occurrence, AppUser owner, AppUser signee, IReadOnlyList<EventSignup> allSignups, Room? room);
     Task AddAttendeeAsync(string graphEventId, AppUser owner, AppUser newSignee, IReadOnlyList<EventSignup> allSignups);
     Task RemoveAttendeeAsync(string graphEventId, AppUser attendeeToRemove, IReadOnlyList<EventSignup> remainingSignups);
     Task CancelMeetingAsync(string graphEventId, AppUser owner);
-    Task<string> CreateMeetingForContributorsAsync(EventOccurrence occurrence, AppUser owner, IReadOnlyList<AppUser> contributors);
+    Task<string> CreateMeetingForContributorsAsync(EventOccurrence occurrence, AppUser owner, IReadOnlyList<AppUser> contributors, Room? room);
     Task UpdateMeetingAttendeesAsync(string graphEventId, AppUser owner, IReadOnlyList<AppUser> contributors);
     Task UpdateMeetingSubjectAsync(string graphEventId, string subject);
 

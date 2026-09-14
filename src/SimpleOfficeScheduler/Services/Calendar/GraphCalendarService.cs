@@ -37,7 +37,7 @@ public class GraphCalendarService : ICalendarInviteService
         return $"<ul>{items}</ul>";
     }
 
-    public async Task<string> CreateMeetingAsync(EventOccurrence occurrence, AppUser owner, AppUser signee, IReadOnlyList<EventSignup> allSignups)
+    public async Task<string> CreateMeetingAsync(EventOccurrence occurrence, AppUser owner, AppUser signee, IReadOnlyList<EventSignup> allSignups, AppRoom? room)
     {
         var targetEmail = _settings.TargetMailbox;
 
@@ -76,9 +76,15 @@ public class GraphCalendarService : ICalendarInviteService
             }
         };
 
+        if (room is not null)
+        {
+            graphEvent.Attendees!.Add(ResourceAttendee(room));
+            graphEvent.Location = RoomLocation(room);
+        }
+
         var created = await _graphClient.Users[targetEmail].Events.PostAsync(graphEvent);
-        _logger.LogInformation("Created Teams meeting {GraphEventId} for event '{Title}' on calendar {TargetCalendar}",
-            created?.Id, occurrence.Event.Title, targetEmail);
+        _logger.LogInformation("Created Teams meeting {GraphEventId} for event '{Title}' on calendar {TargetCalendar} with room {Room}",
+            created?.Id, occurrence.Event.Title, targetEmail, room?.Email ?? "(none)");
 
         return created?.Id ?? throw new InvalidOperationException("Graph API did not return an event ID.");
     }
@@ -141,23 +147,11 @@ public class GraphCalendarService : ICalendarInviteService
         _logger.LogInformation("Cancelled Teams meeting {GraphEventId}", graphEventId);
     }
 
-    public async Task<string> CreateMeetingForContributorsAsync(EventOccurrence occurrence, AppUser owner, IReadOnlyList<AppUser> contributors)
+    public async Task<string> CreateMeetingForContributorsAsync(EventOccurrence occurrence, AppUser owner, IReadOnlyList<AppUser> contributors, AppRoom? room)
     {
         var targetEmail = _settings.TargetMailbox;
 
-        var attendees = new List<Attendee>
-        {
-            new()
-            {
-                EmailAddress = new EmailAddress { Address = owner.Email, Name = owner.DisplayName },
-                Type = AttendeeType.Required
-            }
-        };
-        attendees.AddRange(contributors.Select(c => new Attendee
-        {
-            EmailAddress = new EmailAddress { Address = c.Email, Name = c.DisplayName },
-            Type = AttendeeType.Required
-        }));
+        var attendees = RequiredAttendees(new[] { owner }.Concat(contributors));
 
         var graphEvent = new GraphEvent
         {
@@ -177,9 +171,15 @@ public class GraphCalendarService : ICalendarInviteService
             Attendees = attendees
         };
 
+        if (room is not null)
+        {
+            graphEvent.Attendees!.Add(ResourceAttendee(room));
+            graphEvent.Location = RoomLocation(room);
+        }
+
         var created = await _graphClient.Users[targetEmail].Events.PostAsync(graphEvent);
-        _logger.LogInformation("Created Teams meeting {GraphEventId} for '{Title}' with {Count} contributors",
-            created?.Id, occurrence.DisplayName, contributors.Count);
+        _logger.LogInformation("Created Teams meeting {GraphEventId} for '{Title}' with {Count} contributors and room {Room}",
+            created?.Id, occurrence.DisplayName, contributors.Count, room?.Email ?? "(none)");
 
         return created?.Id ?? throw new InvalidOperationException("Graph API did not return an event ID.");
     }
@@ -188,27 +188,19 @@ public class GraphCalendarService : ICalendarInviteService
     {
         var targetEmail = _settings.TargetMailbox;
 
-        var attendees = new List<Attendee>
-        {
-            new()
-            {
-                EmailAddress = new EmailAddress { Address = owner.Email, Name = owner.DisplayName },
-                Type = AttendeeType.Required
-            }
-        };
-        attendees.AddRange(contributors.Select(c => new Attendee
-        {
-            EmailAddress = new EmailAddress { Address = c.Email, Name = c.DisplayName },
-            Type = AttendeeType.Required
-        }));
+        // Read the meeting first so a booked room survives the patch.
+        var existing = await _graphClient.Users[targetEmail].Events[graphEventId].GetAsync();
+        var attendees = MergeRequiredAttendees(
+            existing?.Attendees, new[] { owner }.Concat(contributors));
 
         await _graphClient.Users[targetEmail].Events[graphEventId].PatchAsync(new GraphEvent
         {
             Attendees = attendees
         });
 
-        _logger.LogInformation("Updated attendees for Teams meeting {GraphEventId} with {Count} contributors",
-            graphEventId, contributors.Count);
+        _logger.LogInformation(
+            "Updated attendees for Teams meeting {GraphEventId} with {Count} contributors, {ResourceCount} resources kept",
+            graphEventId, contributors.Count, attendees.Count(a => a.Type == AttendeeType.Resource));
     }
 
     public async Task UpdateMeetingSubjectAsync(string graphEventId, string subject)
@@ -397,6 +389,27 @@ public class GraphCalendarService : ICalendarInviteService
         return attendees;
     }
 
+    /// <summary>
+    /// Builds the attendee list for a whole event — a series master or a standalone meeting — from
+    /// the resources already on it plus the given people as required.
+    ///
+    /// Same reasoning as MergeInstanceAttendees: patching Attendees replaces the entire list, so
+    /// sending people only releases the room. People are rebuilt from scratch rather than merged so
+    /// that a removed co-owner or contributor actually comes off the invite.
+    /// </summary>
+    internal static List<Attendee> MergeRequiredAttendees(
+        IEnumerable<Attendee>? existing,
+        IEnumerable<AppUser> people)
+    {
+        var attendees = (existing ?? Enumerable.Empty<Attendee>())
+            .Where(a => a.Type == AttendeeType.Resource)
+            .ToList();
+
+        attendees.AddRange(RequiredAttendees(people));
+
+        return attendees;
+    }
+
     public async Task PatchInstanceAttendeesAsync(string instanceId, IReadOnlyList<AppUser> owners, IReadOnlyList<EventSignup> signups)
     {
         var targetEmail = _settings.TargetMailbox;
@@ -478,12 +491,18 @@ public class GraphCalendarService : ICalendarInviteService
     {
         var targetEmail = _settings.TargetMailbox;
 
+        // Read the series first so the booked room survives the patch. Both edit paths set the room
+        // and then the co-owners, so sending people only here undid the room booking just made.
+        var existing = await _graphClient.Users[targetEmail].Events[graphSeriesId].GetAsync();
+        var attendees = MergeRequiredAttendees(existing?.Attendees, owners);
+
         await _graphClient.Users[targetEmail].Events[graphSeriesId].PatchAsync(new GraphEvent
         {
-            Attendees = RequiredAttendees(owners)
+            Attendees = attendees
         });
 
-        _logger.LogInformation("Updated owners on Teams series {GraphEventId} to {Count} attendees",
-            graphSeriesId, owners.Count);
+        _logger.LogInformation(
+            "Updated owners on Teams series {GraphEventId} to {Count} attendees, {ResourceCount} resources kept",
+            graphSeriesId, owners.Count, attendees.Count(a => a.Type == AttendeeType.Resource));
     }
 }

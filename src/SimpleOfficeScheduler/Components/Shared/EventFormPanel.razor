@@ -382,29 +382,7 @@
             return;
         }
 
-        var evt = new Event
-        {
-            Title = _model.Title,
-            Description = _model.Description,
-            StartTime = LocalDateTime.FromDateTime(_model.StartTime),
-            EndTime = LocalDateTime.FromDateTime(_model.EndTime),
-            Capacity = _model.Capacity,
-            TimeZoneId = _model.TimeZoneId,
-            EventType = _model.EventType
-        };
-
-        if (_model.IsRecurring)
-        {
-            evt.Recurrence = new RecurrencePattern
-            {
-                Type = _model.RecurrenceType,
-                Interval = _model.Interval,
-                DaysOfWeek = _model.DaysOfWeek,
-                RecurrenceEndDate = _model.RecurrenceEndDate.HasValue
-                    ? LocalDate.FromDateTime(_model.RecurrenceEndDate.Value)
-                    : null
-            };
-        }
+        var evt = _model.ToEvent();
 
         try
         {
@@ -520,8 +498,6 @@
         }
     }
 
-    private record CoOwnerChoice(int UserId, string DisplayName);
-
     private SimpleOfficeScheduler.Services.Users.UserSearchResult? _coOwnerToAdd;
 
     private async Task AddCoOwner()
@@ -546,24 +522,5 @@
             _model.CoOwners.Add(new CoOwnerChoice(userId, selection.DisplayName));
 
         _coOwnerToAdd = null;
-    }
-
-    private class EventFormModel
-    {
-        [Required]
-        public string Title { get; set; } = string.Empty;
-        public string? Description { get; set; }
-        public DateTime StartTime { get; set; }
-        public DateTime EndTime { get; set; }
-        public int Capacity { get; set; } = 1;
-        public string TimeZoneId { get; set; } = string.Empty;
-        public EventType EventType { get; set; } = EventType.OfficeHours;
-        public List<CoOwnerChoice> CoOwners { get; set; } = new();
-        public string? RoomEmail { get; set; }
-        public bool IsRecurring { get; set; }
-        public RecurrenceType RecurrenceType { get; set; } = RecurrenceType.Weekly;
-        public int Interval { get; set; } = 1;
-        public List<DayOfWeek> DaysOfWeek { get; set; } = new();
-        public DateTime? RecurrenceEndDate { get; set; }
     }
 }

@@ -64,8 +64,12 @@ public class RecurrenceExpander
     /// <summary>
     /// An interval below 1 never advances the cursor. The form's "Every" box binds 0 when cleared,
     /// which is enough to hang the request that creates the event.
+    ///
+    /// GraphRecurrenceMapper clamps through this same method. Graph rejects a 0 interval, and that
+    /// rejection is swallowed by the try/catch around the series sync, so a mismatch here leaves a
+    /// recurring workshop whose Graph series — and therefore whose room booking — was never made.
     /// </summary>
-    private static int SafeInterval(int interval) => interval < 1 ? 1 : interval;
+    internal static int SafeInterval(int interval) => interval < 1 ? 1 : interval;
 
     private static bool ShouldIncludeDate(LocalDateTime date, RecurrencePattern pattern)
     {

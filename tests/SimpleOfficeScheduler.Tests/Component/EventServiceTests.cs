@@ -42,7 +42,7 @@ public class EventServiceTests : IDisposable
 
         _calendarMock = new Mock<ICalendarInviteService>();
         _calendarMock
-            .Setup(c => c.CreateMeetingAsync(It.IsAny<EventOccurrence>(), It.IsAny<AppUser>(), It.IsAny<AppUser>(), It.IsAny<IReadOnlyList<EventSignup>>()))
+            .Setup(c => c.CreateMeetingAsync(It.IsAny<EventOccurrence>(), It.IsAny<AppUser>(), It.IsAny<AppUser>(), It.IsAny<IReadOnlyList<EventSignup>>(), It.IsAny<Room?>()))
             .ReturnsAsync(() => "graph-id-" + Guid.NewGuid());
 
         _clock = new FakeClock(Instant.FromUtc(2026, 3, 1, 12, 0));
@@ -307,7 +307,7 @@ public class EventServiceTests : IDisposable
             It.Is<EventOccurrence>(o => o.Id == occurrenceId),
             It.Is<AppUser>(u => u.Id == owner.Id),
             It.Is<AppUser>(u => u.Id == user.Id),
-            It.IsAny<IReadOnlyList<EventSignup>>()),
+            It.IsAny<IReadOnlyList<EventSignup>>(), It.IsAny<Room?>()),
             Times.Once);
 
         // GraphEventId stored
@@ -576,7 +576,7 @@ public class EventServiceTests : IDisposable
         await _sut.SignUpAsync(occId, user.Id, "Test topic");
 
         _calendarMock.Verify(c => c.CreateMeetingAsync(
-            It.IsAny<EventOccurrence>(), It.IsAny<AppUser>(), It.IsAny<AppUser>(), It.IsAny<IReadOnlyList<EventSignup>>()),
+            It.IsAny<EventOccurrence>(), It.IsAny<AppUser>(), It.IsAny<AppUser>(), It.IsAny<IReadOnlyList<EventSignup>>(), It.IsAny<Room?>()),
             Times.Exactly(3));
     }
 
@@ -632,7 +632,7 @@ public class EventServiceTests : IDisposable
         Assert.NotNull(occ!.GraphEventId);  // New meeting created
 
         _calendarMock.Verify(c => c.CreateMeetingAsync(
-            It.IsAny<EventOccurrence>(), It.IsAny<AppUser>(), It.IsAny<AppUser>(), It.IsAny<IReadOnlyList<EventSignup>>()),
+            It.IsAny<EventOccurrence>(), It.IsAny<AppUser>(), It.IsAny<AppUser>(), It.IsAny<IReadOnlyList<EventSignup>>(), It.IsAny<Room?>()),
             Times.Exactly(2));  // Once for signup, once for uncancel
     }
 
@@ -1005,7 +1005,7 @@ public class EventServiceTests : IDisposable
             It.Is<IReadOnlyList<EventSignup>>(signups =>
                 signups.Count == 1 &&
                 signups[0].Message == "Budget review" &&
-                signups[0].User != null)),
+                signups[0].User != null), It.IsAny<Room?>()),
             Times.Once);
     }
 
@@ -1223,7 +1223,7 @@ public class EventServiceTests : IDisposable
         var contributor = await SeedUserAsync("contributor1");
         _calendarMock
             .Setup(c => c.CreateMeetingForContributorsAsync(
-                It.IsAny<EventOccurrence>(), It.IsAny<AppUser>(), It.IsAny<IReadOnlyList<AppUser>>()))
+                It.IsAny<EventOccurrence>(), It.IsAny<AppUser>(), It.IsAny<IReadOnlyList<AppUser>>(), It.IsAny<Room?>()))
             .ReturnsAsync("graph-contrib-id");
 
         var evt = await _sut.CreateEventAsync(
@@ -1235,7 +1235,7 @@ public class EventServiceTests : IDisposable
         _calendarMock.Verify(c => c.CreateMeetingForContributorsAsync(
             It.Is<EventOccurrence>(o => o.Id == occurrenceId),
             It.Is<AppUser>(u => u.Id == owner.Id),
-            It.Is<IReadOnlyList<AppUser>>(users => users.Count == 1 && users[0].Id == contributor.Id)),
+            It.Is<IReadOnlyList<AppUser>>(users => users.Count == 1 && users[0].Id == contributor.Id), It.IsAny<Room?>()),
             Times.Once);
 
         _db.ChangeTracker.Clear();
@@ -1250,7 +1250,7 @@ public class EventServiceTests : IDisposable
         var contributor = await SeedUserAsync("contributor1");
         _calendarMock
             .Setup(c => c.CreateMeetingForContributorsAsync(
-                It.IsAny<EventOccurrence>(), It.IsAny<AppUser>(), It.IsAny<IReadOnlyList<AppUser>>()))
+                It.IsAny<EventOccurrence>(), It.IsAny<AppUser>(), It.IsAny<IReadOnlyList<AppUser>>(), It.IsAny<Room?>()))
             .ReturnsAsync("graph-contrib-id");
 
         var evt = await _sut.CreateEventAsync(
@@ -1282,7 +1282,7 @@ public class EventServiceTests : IDisposable
         var contributor = await SeedUserAsync("contributor1");
         _calendarMock
             .Setup(c => c.CreateMeetingForContributorsAsync(
-                It.IsAny<EventOccurrence>(), It.IsAny<AppUser>(), It.IsAny<IReadOnlyList<AppUser>>()))
+                It.IsAny<EventOccurrence>(), It.IsAny<AppUser>(), It.IsAny<IReadOnlyList<AppUser>>(), It.IsAny<Room?>()))
             .ReturnsAsync("graph-contrib-id");
 
         var evt = await _sut.CreateEventAsync(
@@ -1368,7 +1368,7 @@ public class EventServiceTests : IDisposable
         var contributor = await SeedUserAsync("contributor1");
         _calendarMock
             .Setup(c => c.CreateMeetingForContributorsAsync(
-                It.IsAny<EventOccurrence>(), It.IsAny<AppUser>(), It.IsAny<IReadOnlyList<AppUser>>()))
+                It.IsAny<EventOccurrence>(), It.IsAny<AppUser>(), It.IsAny<IReadOnlyList<AppUser>>(), It.IsAny<Room?>()))
             .ReturnsAsync("graph-meeting-id");
 
         var evt = await _sut.CreateEventAsync(
@@ -1509,7 +1509,7 @@ public class EventServiceTests : IDisposable
         var contributor = await SeedUserAsync("contributor1");
         _calendarMock
             .Setup(c => c.CreateMeetingForContributorsAsync(
-                It.IsAny<EventOccurrence>(), It.IsAny<AppUser>(), It.IsAny<IReadOnlyList<AppUser>>()))
+                It.IsAny<EventOccurrence>(), It.IsAny<AppUser>(), It.IsAny<IReadOnlyList<AppUser>>(), It.IsAny<Room?>()))
             .ReturnsAsync("graph-id");
 
         var evt = await _sut.CreateEventAsync(
@@ -1551,7 +1551,7 @@ public class EventServiceTests : IDisposable
         var contributor = await SeedUserAsync("contributor1");
         _calendarMock
             .Setup(c => c.CreateMeetingForContributorsAsync(
-                It.IsAny<EventOccurrence>(), It.IsAny<AppUser>(), It.IsAny<IReadOnlyList<AppUser>>()))
+                It.IsAny<EventOccurrence>(), It.IsAny<AppUser>(), It.IsAny<IReadOnlyList<AppUser>>(), It.IsAny<Room?>()))
             .ReturnsAsync("graph-contrib-id");
 
         var evt = await _sut.CreateEventAsync(

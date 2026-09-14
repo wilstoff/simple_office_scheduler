@@ -120,25 +120,35 @@ jobs:
           docker logs scheduler-smoke
           exit 1
 
-      - name: Smoke test - login, create event, signup
+      # Each behaviour gets its own step so a failure names itself in the Actions UI instead of
+      # hiding in one long log. Steps in a job share the working directory, so cookies.txt written
+      # by the login step is reused throughout; ids have to cross steps through $GITHUB_ENV.
+      #
+      # Note the ceiling on the room checks below: the container has no Graph credentials, so it
+      # falls back to NoOpCalendarService. These steps prove the room reached the app. They cannot
+      # prove the resource attendee reached Graph — only the Component tests do that.
+
+      - name: 'Smoke: static assets'
         run: |
           set -e
-
-          # 0. Verify critical static assets are served
           curl -sf http://localhost:8080/_framework/blazor.web.js > /dev/null \
             || { echo "FAIL: blazor.web.js not served"; exit 1; }
           curl -sf http://localhost:8080/js/fullcalendar-interop.js > /dev/null \
             || { echo "FAIL: fullcalendar-interop.js not served"; exit 1; }
           echo "Static asset checks OK"
 
-          # 1. Login
+      - name: 'Smoke: login'
+        run: |
+          set -e
           LOGIN=$(curl -sf -X POST http://localhost:8080/api/auth/login \
             -H "Content-Type: application/json" \
             -c cookies.txt \
             -d '{"username":"testadmin","password":"Test123!"}')
           echo "Login OK: $(echo "$LOGIN" | jq -r .displayName)"
 
-          # 2. Create event
+      - name: 'Smoke: create office hours event'
+        run: |
+          set -e
           EVENT=$(curl -sf -X POST http://localhost:8080/api/events \
             -H "Content-Type: application/json" \
             -b cookies.txt \
@@ -151,8 +161,10 @@ jobs:
           EVENT_ID=$(echo "$EVENT" | jq -r .id)
           OCC_ID=$(echo "$EVENT" | jq -r '.occurrences[0].id')
           echo "Event created: id=$EVENT_ID, occurrence=$OCC_ID"
+          echo "EVENT_ID=$EVENT_ID" >> "$GITHUB_ENV"
+          echo "OCC_ID=$OCC_ID" >> "$GITHUB_ENV"
 
-          # 2b. Verify event times match what we sent (no timezone offset)
+          # Verify event times match what we sent (no timezone offset)
           EVT_START=$(echo "$EVENT" | jq -r .startTime)
           EVT_END=$(echo "$EVENT" | jq -r .endTime)
           OCC_START=$(echo "$EVENT" | jq -r '.occurrences[0].startTime')
@@ -178,14 +190,15 @@ jobs:
           fi
           echo "Time validation OK: event and occurrence times match sent values"
 
-          # 3. Sign up for event
+      - name: 'Smoke: office hours signup'
+        run: |
+          set -e
           curl -sf -X POST "http://localhost:8080/api/events/${EVENT_ID}/signup/${OCC_ID}" \
             -b cookies.txt \
             -H "Content-Type: application/json" \
             -d '{"message":"Smoke test topic"}'
           echo "Signup OK"
 
-          # 4. Verify signup
           VERIFY=$(curl -sf "http://localhost:8080/api/events/${EVENT_ID}" \
             -b cookies.txt)
           SIGNUP_COUNT=$(echo "$VERIFY" | jq -r '.occurrences[0].signupCount')
@@ -195,9 +208,9 @@ jobs:
           fi
           echo "Verified: signupCount=$SIGNUP_COUNT"
 
-          # ── Tech Meeting smoke test ──────────────────────────────
-
-          # 5. Create tech meeting
+      - name: 'Smoke: create tech meeting'
+        run: |
+          set -e
           TECH_EVENT=$(curl -sf -X POST http://localhost:8080/api/events \
             -H "Content-Type: application/json" \
             -b cookies.txt \
@@ -212,13 +225,18 @@ jobs:
           TECH_OCC_ID=$(echo "$TECH_EVENT" | jq -r '.occurrences[0].id')
           TECH_TYPE=$(echo "$TECH_EVENT" | jq -r .eventType)
           echo "Tech meeting created: id=$TECH_ID, occurrence=$TECH_OCC_ID, type=$TECH_TYPE"
+          echo "TECH_ID=$TECH_ID" >> "$GITHUB_ENV"
+          echo "TECH_OCC_ID=$TECH_OCC_ID" >> "$GITHUB_ENV"
 
           if [ "$TECH_TYPE" != "TechMeeting" ] && [ "$TECH_TYPE" != "1" ]; then
             echo "FAIL: expected eventType=TechMeeting or 1, got $TECH_TYPE"
             exit 1
           fi
 
-          # 6. Signup on regular tech meeting should fail
+      - name: 'Smoke: tech meeting signup rules'
+        run: |
+          set -e
+          # Signup on a regular tech meeting should fail
           SIGNUP_FAIL=$(curl -s -o /dev/null -w "%{http_code}" \
             -X POST "http://localhost:8080/api/events/${TECH_ID}/signup/${TECH_OCC_ID}" \
             -b cookies.txt \
@@ -230,21 +248,18 @@ jobs:
           fi
           echo "Signup blocked on regular tech meeting: OK"
 
-          # 7. Toggle to lightning talks
           curl -sf -X POST "http://localhost:8080/api/events/occurrences/${TECH_OCC_ID}/lightning-talks" \
             -b cookies.txt \
             -H "Content-Type: application/json" \
             -d '{"isLightningTalks":true}'
           echo "Lightning talks enabled: OK"
 
-          # 8. Signup on lightning talks should succeed
           curl -sf -X POST "http://localhost:8080/api/events/${TECH_ID}/signup/${TECH_OCC_ID}" \
             -b cookies.txt \
             -H "Content-Type: application/json" \
             -d '{"message":"Lightning talk topic"}'
           echo "Lightning talks signup: OK"
 
-          # 9. Verify lightning talks signup
           TECH_VERIFY=$(curl -sf "http://localhost:8080/api/events/${TECH_ID}" -b cookies.txt)
           TECH_SIGNUP_COUNT=$(echo "$TECH_VERIFY" | jq -r '.occurrences[0].signupCount')
           TECH_IS_LR=$(echo "$TECH_VERIFY" | jq -r '.occurrences[0].isLightningTalks')
@@ -258,9 +273,10 @@ jobs:
           fi
           echo "Tech meeting verified: signupCount=$TECH_SIGNUP_COUNT, isLightningTalks=$TECH_IS_LR"
 
-          # ── Workshop smoke test ──────────────────────────────────
-
-          # 10. Find the seeded second user to co-own the workshop
+      - name: 'Smoke: create workshop with co-owners'
+        run: |
+          set -e
+          # Find the seeded second user to co-own the workshop
           CO_OWNER_ID=$(curl -sf "http://localhost:8080/api/users/search?q=alice" -b cookies.txt \
             | jq -r '.[0].id')
           echo "Co-owner: id=$CO_OWNER_ID"
@@ -268,8 +284,8 @@ jobs:
             echo "FAIL: could not find the seeded co-owner user"
             exit 1
           fi
+          echo "CO_OWNER_ID=$CO_OWNER_ID" >> "$GITHUB_ENV"
 
-          # 11. Create a workshop with an owning team
           WS_EVENT=$(curl -sf -X POST http://localhost:8080/api/events \
             -H "Content-Type: application/json" \
             -b cookies.txt \
@@ -286,6 +302,8 @@ jobs:
           WS_TYPE=$(echo "$WS_EVENT" | jq -r .eventType)
           WS_CO_OWNERS=$(echo "$WS_EVENT" | jq -r '.coOwners | length')
           echo "Workshop created: id=$WS_ID, occurrence=$WS_OCC_ID, type=$WS_TYPE, coOwners=$WS_CO_OWNERS"
+          echo "WS_ID=$WS_ID" >> "$GITHUB_ENV"
+          echo "WS_OCC_ID=$WS_OCC_ID" >> "$GITHUB_ENV"
 
           if [ "$WS_TYPE" != "Workshop" ] && [ "$WS_TYPE" != "2" ]; then
             echo "FAIL: expected eventType=Workshop or 2, got $WS_TYPE"
@@ -296,14 +314,17 @@ jobs:
             exit 1
           fi
 
-          # 12. A workshop signup takes no message, unlike office hours
+      - name: 'Smoke: workshop signup lifecycle'
+        run: |
+          set -e
+          # A workshop signup takes no message, unlike office hours
           curl -sf -X POST "http://localhost:8080/api/events/${WS_ID}/signup/${WS_OCC_ID}" \
             -b cookies.txt \
             -H "Content-Type: application/json" \
             -d '{"message":""}'
           echo "Workshop signup without a message: OK"
 
-          # 13. Cancelling the last signup must not tear down the workshop meeting
+          # Cancelling the last signup must not tear down the workshop meeting
           curl -sf -X DELETE "http://localhost:8080/api/events/${WS_ID}/signup/${WS_OCC_ID}" \
             -b cookies.txt
           WS_VERIFY=$(curl -sf "http://localhost:8080/api/events/${WS_ID}" -b cookies.txt)
@@ -314,22 +335,9 @@ jobs:
           fi
           echo "Workshop survives losing its last signup: OK"
 
-          # 14. Co-owner list can be replaced
-          curl -sf -X POST "http://localhost:8080/api/events/${WS_ID}/co-owners" \
-            -b cookies.txt \
-            -H "Content-Type: application/json" \
-            -d '{"userIds":[]}'
-          WS_CO_OWNERS_AFTER=$(curl -sf "http://localhost:8080/api/events/${WS_ID}" -b cookies.txt \
-            | jq -r '.coOwners | length')
-          if [ "$WS_CO_OWNERS_AFTER" -ne 0 ]; then
-            echo "FAIL: expected 0 co-owners after clearing, got $WS_CO_OWNERS_AFTER"
-            exit 1
-          fi
-          echo "Co-owner list cleared: OK"
-
-          # ── Room smoke test ──────────────────────────────────────
-
-          # 15. The rooms endpoint responds with the configured list
+      - name: 'Smoke: rooms endpoint'
+        run: |
+          set -e
           ROOMS=$(curl -sf http://localhost:8080/api/rooms -b cookies.txt)
           echo "Rooms endpoint returned: $ROOMS"
           ROOM_COUNT=$(echo "$ROOMS" | jq -r 'length')
@@ -338,7 +346,222 @@ jobs:
             exit 1
           fi
 
-          # 16. Booking that room marks future occurrences pending
+      - name: 'Smoke: create a workshop with a room'
+        run: |
+          set -e
+          # The room goes in the SAME request as the create, which is the path that was broken: the
+          # calendar side panel dropped RoomEmail on create, so the room was only ever applied by a
+          # later edit. CI previously created roomless and patched the room on afterwards, so it
+          # never exercised this at all.
+          WS_ROOM_EVENT=$(curl -sf -X POST http://localhost:8080/api/events \
+            -H "Content-Type: application/json" \
+            -b cookies.txt \
+            -d '{
+              "title":"CI Workshop With Room",
+              "startTime":"2099-04-15T14:00:00",
+              "endTime":"2099-04-15T16:00:00",
+              "capacity":3,
+              "eventType":2,
+              "roomEmail":"ci-room@example.com"
+            }')
+          WS_ROOM_ID=$(echo "$WS_ROOM_EVENT" | jq -r .id)
+          WS_ROOM_EMAIL=$(echo "$WS_ROOM_EVENT" | jq -r .roomEmail)
+          WS_ROOM_NAME=$(echo "$WS_ROOM_EVENT" | jq -r .roomDisplayName)
+          WS_ROOM_STATUS=$(echo "$WS_ROOM_EVENT" | jq -r '.occurrences[0].roomBookingStatus')
+          echo "Workshop with room created: id=$WS_ROOM_ID, room=$WS_ROOM_EMAIL ($WS_ROOM_NAME), status=$WS_ROOM_STATUS"
+          echo "WS_ROOM_ID=$WS_ROOM_ID" >> "$GITHUB_ENV"
+
+          if [ "$WS_ROOM_EMAIL" != "ci-room@example.com" ]; then
+            echo "FAIL: expected roomEmail=ci-room@example.com, got $WS_ROOM_EMAIL"
+            exit 1
+          fi
+          if [ "$WS_ROOM_NAME" != "CI Room" ]; then
+            echo "FAIL: expected roomDisplayName=CI Room, got $WS_ROOM_NAME"
+            exit 1
+          fi
+          if [ "$WS_ROOM_STATUS" != "Pending" ] && [ "$WS_ROOM_STATUS" != "1" ]; then
+            echo "FAIL: expected occurrence roomBookingStatus=Pending, got $WS_ROOM_STATUS"
+            exit 1
+          fi
+          echo "Room booked at creation: OK"
+
+      - name: 'Smoke: a recurring workshop keeps its room through an edit'
+        run: |
+          set -e
+          # Guards the app-visible contract for the recurring-workshop report: a repeating schedule
+          # built with interval 0 (what the form's "Every" box binds when cleared) still expands,
+          # keeps its room across an edit, and leaves every date awaiting the room.
+          #
+          # Be clear about the ceiling. Neither underlying defect is observable from here, because
+          # the container runs NoOpCalendarService: it accepts any interval, so it cannot show that
+          # Graph rejects a 0 one, and it has no attendee list, so it cannot show the room being
+          # reconciled onto the series. Those two are covered by GraphRecurrenceMapperTests and
+          # WorkshopRoomReconcileTests. This step exists to stop the visible behavior regressing.
+          # Every occurrence has to be awaiting the room. Walked by index rather than with a
+          # select() filter so the check stays readable.
+          assert_all_pending() {
+            local json="$1" label="$2" total i status
+            total=$(echo "$json" | jq -r '.occurrences | length')
+            for i in $(seq 0 $((total - 1))); do
+              status=$(echo "$json" | jq -r ".occurrences[$i].roomBookingStatus")
+              if [ "$status" != "Pending" ] && [ "$status" != "1" ]; then
+                echo "FAIL: $label - occurrence $i is '$status', expected Pending"
+                exit 1
+              fi
+            done
+            echo "$label: all $total occurrences Pending"
+          }
+
+          # Unlike the single events above, a recurring one only expands inside the app's horizon
+          # (RecurrenceSettings.DefaultHorizonMonths from now), so these dates are relative to today
+          # rather than the far-future ones used elsewhere, which would expand to nothing.
+          REC_START=$(date -u -d "+7 days" +%Y-%m-%d)
+          REC_END=$(date -u -d "+60 days" +%Y-%m-%d)
+          REC_DOW=$(date -u -d "+7 days" +%w)
+          echo "Recurring on day-of-week $REC_DOW, $REC_START through $REC_END"
+
+          REC_EVENT=$(curl -sf -X POST http://localhost:8080/api/events \
+            -H "Content-Type: application/json" \
+            -b cookies.txt \
+            -d "{
+              \"title\":\"CI Recurring Room Workshop\",
+              \"startTime\":\"${REC_START}T14:00:00\",
+              \"endTime\":\"${REC_START}T16:00:00\",
+              \"capacity\":5,
+              \"eventType\":2,
+              \"roomEmail\":\"ci-room@example.com\",
+              \"recurrence\":{\"type\":1,\"interval\":0,\"daysOfWeek\":[${REC_DOW}],\"recurrenceEndDate\":\"${REC_END}\"}
+            }")
+          REC_ID=$(echo "$REC_EVENT" | jq -r .id)
+          REC_COUNT=$(echo "$REC_EVENT" | jq -r '.occurrences | length')
+          REC_ROOM=$(echo "$REC_EVENT" | jq -r .roomDisplayName)
+          echo "Recurring workshop created: id=$REC_ID, occurrences=$REC_COUNT, room=$REC_ROOM"
+
+          if [ "$REC_COUNT" -lt 2 ]; then
+            echo "FAIL: expected a repeating schedule, got $REC_COUNT occurrence(s)"
+            exit 1
+          fi
+          if [ "$REC_ROOM" != "CI Room" ]; then
+            echo "FAIL: expected roomDisplayName=CI Room, got $REC_ROOM"
+            exit 1
+          fi
+
+          assert_all_pending "$REC_EVENT" "At creation"
+
+          # Rename only. The room is untouched by the request, so anything that puts it back on the
+          # series is the reconcile doing its job.
+          curl -sf -X PUT "http://localhost:8080/api/events/${REC_ID}" \
+            -H "Content-Type: application/json" \
+            -b cookies.txt \
+            -d "{
+              \"title\":\"CI Recurring Room Workshop Renamed\",
+              \"startTime\":\"${REC_START}T14:00:00\",
+              \"endTime\":\"${REC_START}T16:00:00\",
+              \"capacity\":5,
+              \"recurrence\":{\"type\":1,\"interval\":0,\"daysOfWeek\":[${REC_DOW}],\"recurrenceEndDate\":\"${REC_END}\"}
+            }" > /dev/null
+
+          REC_AFTER=$(curl -sf "http://localhost:8080/api/events/${REC_ID}" -b cookies.txt)
+          REC_ROOM_AFTER=$(echo "$REC_AFTER" | jq -r .roomDisplayName)
+          REC_COUNT_AFTER=$(echo "$REC_AFTER" | jq -r '.occurrences | length')
+          echo "After the edit: room=$REC_ROOM_AFTER, occurrences=$REC_COUNT_AFTER"
+
+          if [ "$REC_ROOM_AFTER" != "CI Room" ]; then
+            echo "FAIL: the edit lost the room, got $REC_ROOM_AFTER"
+            exit 1
+          fi
+          if [ "$REC_COUNT_AFTER" -lt 2 ]; then
+            echo "FAIL: the edit lost the repeating schedule, got $REC_COUNT_AFTER occurrence(s)"
+            exit 1
+          fi
+
+          assert_all_pending "$REC_AFTER" "After the edit"
+          echo "Room reconciled and every date re-queued for the room: OK"
+
+      - name: 'Smoke: create office hours with a room'
+        run: |
+          set -e
+          # Office hours have no meeting until the first signup, so the room has to be attached when
+          # that meeting is finally created. It used to be left off, and the occurrence then went to
+          # Failed for a booking the app had never sent.
+          OH_ROOM_EVENT=$(curl -sf -X POST http://localhost:8080/api/events \
+            -H "Content-Type: application/json" \
+            -b cookies.txt \
+            -d '{
+              "title":"CI Office Hours With Room",
+              "startTime":"2099-05-15T09:00:00",
+              "endTime":"2099-05-15T10:00:00",
+              "capacity":5,
+              "roomEmail":"ci-room@example.com"
+            }')
+          OH_ROOM_ID=$(echo "$OH_ROOM_EVENT" | jq -r .id)
+          OH_ROOM_OCC_ID=$(echo "$OH_ROOM_EVENT" | jq -r '.occurrences[0].id')
+          echo "Office hours with room created: id=$OH_ROOM_ID, occurrence=$OH_ROOM_OCC_ID"
+
+          curl -sf -X POST "http://localhost:8080/api/events/${OH_ROOM_ID}/signup/${OH_ROOM_OCC_ID}" \
+            -b cookies.txt \
+            -H "Content-Type: application/json" \
+            -d '{"message":"Needs the room"}'
+
+          OH_VERIFY=$(curl -sf "http://localhost:8080/api/events/${OH_ROOM_ID}" -b cookies.txt)
+          OH_STATUS=$(echo "$OH_VERIFY" | jq -r '.occurrences[0].roomBookingStatus')
+          OH_NAME=$(echo "$OH_VERIFY" | jq -r .roomDisplayName)
+          echo "After signup: room=$OH_NAME, status=$OH_STATUS"
+
+          if [ "$OH_NAME" != "CI Room" ]; then
+            echo "FAIL: expected roomDisplayName=CI Room, got $OH_NAME"
+            exit 1
+          fi
+          if [ "$OH_STATUS" = "Failed" ] || [ "$OH_STATUS" = "4" ]; then
+            echo "FAIL: the room was not put on the meeting the signup created"
+            exit 1
+          fi
+          echo "Office hours kept its room through the first signup: OK"
+
+      - name: 'Smoke: replace the workshop co-owner list'
+        run: |
+          set -e
+          curl -sf -X POST "http://localhost:8080/api/events/${WS_ROOM_ID}/co-owners" \
+            -b cookies.txt \
+            -H "Content-Type: application/json" \
+            -d "{\"userIds\":[${CO_OWNER_ID}]}"
+          WS_CO_OWNERS_AFTER=$(curl -sf "http://localhost:8080/api/events/${WS_ROOM_ID}" -b cookies.txt \
+            | jq -r '.coOwners | length')
+          if [ "$WS_CO_OWNERS_AFTER" -ne 1 ]; then
+            echo "FAIL: expected 1 co-owner after setting, got $WS_CO_OWNERS_AFTER"
+            exit 1
+          fi
+
+          curl -sf -X POST "http://localhost:8080/api/events/${WS_ROOM_ID}/co-owners" \
+            -b cookies.txt \
+            -H "Content-Type: application/json" \
+            -d '{"userIds":[]}'
+          WS_CLEARED=$(curl -sf "http://localhost:8080/api/events/${WS_ROOM_ID}" -b cookies.txt)
+          WS_CO_OWNERS_CLEARED=$(echo "$WS_CLEARED" | jq -r '.coOwners | length')
+          if [ "$WS_CO_OWNERS_CLEARED" -ne 0 ]; then
+            echo "FAIL: expected 0 co-owners after clearing, got $WS_CO_OWNERS_CLEARED"
+            exit 1
+          fi
+          echo "Co-owner list cleared: OK"
+
+          # A co-owner change patches the series attendees, which used to replace the whole list and
+          # take the room off with it. NoOpCalendarService means the attendee list is untouched here,
+          # so this only catches the app-side half — the Component tests cover the Graph half.
+          WS_ROOM_STILL=$(echo "$WS_CLEARED" | jq -r .roomDisplayName)
+          WS_STATUS_STILL=$(echo "$WS_CLEARED" | jq -r '.occurrences[0].roomBookingStatus')
+          if [ "$WS_ROOM_STILL" != "CI Room" ]; then
+            echo "FAIL: the co-owner change cleared the room, got $WS_ROOM_STILL"
+            exit 1
+          fi
+          if [ "$WS_STATUS_STILL" = "Failed" ] || [ "$WS_STATUS_STILL" = "4" ]; then
+            echo "FAIL: the co-owner change left the room booking Failed"
+            exit 1
+          fi
+          echo "Room survived the co-owner change: $WS_ROOM_STILL ($WS_STATUS_STILL)"
+
+      - name: 'Smoke: change the room on a workshop'
+        run: |
+          set -e
           curl -sf -X POST "http://localhost:8080/api/events/${WS_ID}/room" \
             -b cookies.txt \
             -H "Content-Type: application/json" \
@@ -351,7 +574,10 @@ jobs:
           fi
           echo "Room booked: $ROOM_NAME"
 
-          # 17. An unknown room must be rejected rather than silently ignored
+      - name: 'Smoke: unknown room is rejected'
+        run: |
+          set -e
+          # Rejected rather than silently ignored, so a typo cannot look like a successful booking.
           BAD_ROOM=$(curl -s -o /dev/null -w "%{http_code}" \
             -X POST "http://localhost:8080/api/events/${WS_ID}/room" \
             -b cookies.txt \
@@ -362,6 +588,23 @@ jobs:
             exit 1
           fi
           echo "Unknown room rejected: OK"
+
+          BAD_CREATE=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X POST http://localhost:8080/api/events \
+            -b cookies.txt \
+            -H "Content-Type: application/json" \
+            -d '{
+              "title":"CI Bad Room At Create",
+              "startTime":"2099-06-15T09:00:00",
+              "endTime":"2099-06-15T10:00:00",
+              "capacity":5,
+              "roomEmail":"nope@example.com"
+            }')
+          if [ "$BAD_CREATE" -ne 400 ]; then
+            echo "FAIL: unknown room at create should return 400, got $BAD_CREATE"
+            exit 1
+          fi
+          echo "Unknown room rejected at create too: OK"
 
       - name: Stop container
         if: always()

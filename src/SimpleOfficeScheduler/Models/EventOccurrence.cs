@@ -34,6 +34,23 @@ public class EventOccurrence
         }
     }
 
+    /// <summary>
+    /// Builds a new occurrence for an event. Used by every site that creates one — event creation,
+    /// a schedule adjustment, and the background expansion — so they cannot disagree about the
+    /// starting booking status. That matters because RefreshRoomBookingStatusAsync only polls
+    /// occurrences that are Pending: one left at None on a room-booked event is never checked, and
+    /// never shows what the room said.
+    /// </summary>
+    public static EventOccurrence For(int eventId, LocalDateTime start, LocalDateTime end, string? roomEmail) => new()
+    {
+        EventId = eventId,
+        StartTime = start,
+        EndTime = end,
+        RoomBookingStatus = string.IsNullOrWhiteSpace(roomEmail)
+            ? RoomBookingStatus.None
+            : RoomBookingStatus.Pending
+    };
+
     public ICollection<EventSignup> Signups { get; set; } = new List<EventSignup>();
     public ICollection<OccurrenceContributor> Contributors { get; set; } = new List<OccurrenceContributor>();
     public ICollection<OccurrenceReminderValue> ReminderValues { get; set; } = new List<OccurrenceReminderValue>();

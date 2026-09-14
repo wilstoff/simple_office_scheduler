@@ -86,6 +86,27 @@ public class EventService : IEventService
         return room;
     }
 
+    /// <summary>
+    /// Puts every future occurrence back to an unanswered booking state, so the poller asks the room
+    /// again. Used wherever something makes the room mailbox re-evaluate the event: a room change, a
+    /// schedule change, or the recurrence range rolling forward.
+    ///
+    /// Pending rather than keeping the old value, because RefreshRoomBookingStatusAsync only polls
+    /// what is Pending: an occurrence left at Booked would keep reporting a booking for a time the
+    /// event no longer runs at, and one left at Declined or Failed would never get another chance.
+    ///
+    /// Requires evt.Occurrences to be loaded.
+    /// </summary>
+    private void ResetRoomBookings(Event evt, Room? room)
+    {
+        var nowInTz = NowInEventTimeZone(evt);
+        foreach (var occ in evt.Occurrences.Where(o => o.StartTime.CompareTo(nowInTz) > 0))
+        {
+            occ.RoomBookingStatus = room is null ? RoomBookingStatus.None : RoomBookingStatus.Pending;
+            occ.RoomBookingError = null;
+        }
+    }
+
     /// <summary>Every owner of the event: the creator first, then co-owners.</summary>
     private static async Task<List<AppUser>> LoadOwnersAsync(AppDbContext db, Event evt)
     {
@@ -146,13 +167,7 @@ public class EventService : IEventService
 
         foreach (var (start, end) in dates)
         {
-            db.EventOccurrences.Add(new EventOccurrence
-            {
-                EventId = evt.Id,
-                StartTime = start,
-                EndTime = end,
-                RoomBookingStatus = room is null ? RoomBookingStatus.None : RoomBookingStatus.Pending
-            });
+            db.EventOccurrences.Add(EventOccurrence.For(evt.Id, start, end, room?.Email));
         }
 
         await db.SaveChangesAsync();
@@ -317,7 +332,12 @@ public class EventService : IEventService
             }
             else if (string.IsNullOrEmpty(occurrence.GraphEventId))
             {
-                var graphEventId = await _calendarService.CreateMeetingAsync(occurrence, occurrence.Event.Owner, user, allSignups);
+                // This is the first meeting for the occurrence, so it is the only chance to book a
+                // room chosen at creation time: SetRoomAsync can only patch occurrences that
+                // already have a Graph event. Resolved here rather than passed down so a room
+                // picked after creation is picked up by the next signup.
+                var room = await ResolveRoomAsync(occurrence.Event.RoomEmail);
+                var graphEventId = await _calendarService.CreateMeetingAsync(occurrence, occurrence.Event.Owner, user, allSignups, room);
                 occurrence.GraphEventId = graphEventId;
                 await db.SaveChangesAsync();
             }
@@ -367,6 +387,18 @@ public class EventService : IEventService
 
             // Cache the resolved instance so later signups skip the lookup.
             occurrence.GraphEventId = targetId;
+
+            // Caching it also moves what RefreshRoomBookingStatusAsync reads for this date, from the
+            // series master to the instance. Anything already concluded from the master describes a
+            // Graph object this occurrence no longer points at, so ask the room again about the
+            // exception the patch is creating. Only on the first signup: later ones patch an
+            // exception that already exists and change nothing about what is polled.
+            if (!string.IsNullOrEmpty(occurrence.Event.RoomEmail))
+            {
+                occurrence.RoomBookingStatus = RoomBookingStatus.Pending;
+                occurrence.RoomBookingError = null;
+            }
+
             await db.SaveChangesAsync();
         }
 
@@ -420,6 +452,16 @@ public class EventService : IEventService
                     // Last signup removed — cancel the entire meeting
                     await _calendarService.CancelMeetingAsync(occurrence.GraphEventId, occurrence.Event.Owner);
                     occurrence.GraphEventId = null;
+
+                    // Cancelling releases the room along with the meeting, so a Booked status here
+                    // would claim a room the app no longer holds. Pending, not None: the next
+                    // signup recreates the meeting with the room and the poller reads the outcome.
+                    if (!string.IsNullOrEmpty(occurrence.Event.RoomEmail))
+                    {
+                        occurrence.RoomBookingStatus = RoomBookingStatus.Pending;
+                        occurrence.RoomBookingError = null;
+                    }
+
                     await db.SaveChangesAsync();
                 }
                 else
@@ -515,9 +557,17 @@ public class EventService : IEventService
             try
             {
                 var firstSignup = signups[0];
+                // Uncancelling builds a brand new meeting, so the room has to be booked onto it
+                // again — the old meeting took its hold with it when it was cancelled.
+                var room = await ResolveRoomAsync(occurrence.Event.RoomEmail);
                 var graphEventId = await _calendarService.CreateMeetingAsync(
-                    occurrence, occurrence.Event.Owner, firstSignup.User, signups);
+                    occurrence, occurrence.Event.Owner, firstSignup.User, signups, room);
                 occurrence.GraphEventId = graphEventId;
+                if (room is not null)
+                {
+                    occurrence.RoomBookingStatus = RoomBookingStatus.Pending;
+                    occurrence.RoomBookingError = null;
+                }
                 await db.SaveChangesAsync();
 
                 foreach (var signup in signups.Skip(1))
@@ -592,15 +642,7 @@ public class EventService : IEventService
         {
             if (!existingStartTimes.Contains(start) && start.CompareTo(nowInTz) > 0)
             {
-                db.EventOccurrences.Add(new EventOccurrence
-                {
-                    EventId = existing.Id,
-                    StartTime = start,
-                    EndTime = end,
-                    RoomBookingStatus = existing.RoomEmail is null
-                        ? RoomBookingStatus.None
-                        : RoomBookingStatus.Pending
-                });
+                db.EventOccurrences.Add(EventOccurrence.For(existing.Id, start, end, existing.RoomEmail));
             }
         }
 
@@ -635,17 +677,29 @@ public class EventService : IEventService
 
         try
         {
+            var room = await ResolveRoomAsync(evt.RoomEmail);
+
             if (string.IsNullOrEmpty(evt.GraphSeriesId))
             {
                 // Callers load CoOwners as part of the permission check, so no extra query here.
                 var owners = await LoadOwnersAsync(db, evt);
-                var room = await ResolveRoomAsync(evt.RoomEmail);
                 evt.GraphSeriesId = await _calendarService.CreateSeriesAsync(evt, owners, windowEnd, room);
             }
             else
             {
                 await _calendarService.UpdateSeriesScheduleAsync(evt.GraphSeriesId, evt, windowEnd);
+
+                // The series can be out of step with the room the app has recorded: it may predate
+                // room booking, or have been created when the room never reached Graph. Nothing
+                // else notices, because the room is otherwise only applied by an explicit
+                // SetRoomAsync. An update is the natural place to put that right.
+                if (room is not null)
+                    await _calendarService.UpdateSeriesRoomAsync(evt.GraphSeriesId, room);
             }
+
+            // Patching the schedule re-sends the series, so the room re-evaluates every date. That
+            // answer is only ever read for occurrences sitting at Pending.
+            ResetRoomBookings(evt, room);
 
             evt.GraphSeriesWindowEnd = windowEnd;
             await db.SaveChangesAsync();
@@ -777,12 +831,7 @@ public class EventService : IEventService
         evt.RoomDisplayName = room?.DisplayName;
         evt.UpdatedAt = Now;
 
-        var nowInTz = NowInEventTimeZone(evt);
-        foreach (var occ in evt.Occurrences.Where(o => o.StartTime.CompareTo(nowInTz) > 0))
-        {
-            occ.RoomBookingStatus = room is null ? RoomBookingStatus.None : RoomBookingStatus.Pending;
-            occ.RoomBookingError = null;
-        }
+        ResetRoomBookings(evt, room);
 
         await db.SaveChangesAsync();
 
@@ -883,6 +932,7 @@ public class EventService : IEventService
 
         var candidates = await db.Events
             .Include(e => e.CoOwners)
+            .Include(e => e.Occurrences)
             .Where(e => e.EventType == EventType.Workshop
                 && e.GraphSeriesId != null
                 && e.Recurrence != null)
@@ -912,6 +962,12 @@ public class EventService : IEventService
             try
             {
                 await _calendarService.ExtendSeriesRangeAsync(evt.GraphSeriesId!, evt, target);
+
+                // The range patch is what makes the room re-evaluate the newly added dates, so the
+                // occurrences have to go back to Pending for that answer to ever be read.
+                if (!string.IsNullOrEmpty(evt.RoomEmail))
+                    ResetRoomBookings(evt, await ResolveRoomAsync(evt.RoomEmail, ct));
+
                 evt.GraphSeriesWindowEnd = target;
                 evt.UpdatedAt = Now;
                 await db.SaveChangesAsync(ct);
@@ -1042,7 +1098,10 @@ public class EventService : IEventService
             }
             else
             {
-                var graphEventId = await _calendarService.CreateMeetingForContributorsAsync(occurrence, owner!, contributors);
+                // Same as the signup path: the first meeting is the only chance to book a room that
+                // was chosen before there was anything to patch.
+                var room = await ResolveRoomAsync(occurrence.Event.RoomEmail);
+                var graphEventId = await _calendarService.CreateMeetingForContributorsAsync(occurrence, owner!, contributors, room);
                 occurrence.GraphEventId = graphEventId;
                 await db.SaveChangesAsync();
             }
