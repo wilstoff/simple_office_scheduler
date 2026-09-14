@@ -12,10 +12,10 @@ public class NoOpCalendarService : ICalendarInviteService
         _logger = logger;
     }
 
-    public Task<string> CreateMeetingAsync(EventOccurrence occurrence, AppUser owner, AppUser signee, IReadOnlyList<EventSignup> allSignups)
+    public Task<string> CreateMeetingAsync(EventOccurrence occurrence, AppUser owner, AppUser signee, IReadOnlyList<EventSignup> allSignups, Room? room)
     {
-        _logger.LogInformation("DEV: Would create Teams meeting for '{Title}' with {Owner} and {Signee}",
-            occurrence.Event.Title, owner.Email, signee.Email);
+        _logger.LogInformation("DEV: Would create Teams meeting for '{Title}' with {Owner} and {Signee}, room {Room}",
+            occurrence.Event.Title, owner.Email, signee.Email, room?.Email ?? "(none)");
         LogSignupTopics(allSignups);
         return Task.FromResult("fake-graph-id-" + Guid.NewGuid());
     }
@@ -42,11 +42,11 @@ public class NoOpCalendarService : ICalendarInviteService
         return Task.CompletedTask;
     }
 
-    public Task<string> CreateMeetingForContributorsAsync(EventOccurrence occurrence, AppUser owner, IReadOnlyList<AppUser> contributors)
+    public Task<string> CreateMeetingForContributorsAsync(EventOccurrence occurrence, AppUser owner, IReadOnlyList<AppUser> contributors, Room? room)
     {
-        _logger.LogInformation("DEV: Would create Teams meeting for '{Title}' with {Owner} and {Count} contributors: {Contributors}",
+        _logger.LogInformation("DEV: Would create Teams meeting for '{Title}' with {Owner} and {Count} contributors: {Contributors}, room {Room}",
             occurrence.DisplayName, owner.Email, contributors.Count,
-            string.Join(", ", contributors.Select(c => c.DisplayName)));
+            string.Join(", ", contributors.Select(c => c.DisplayName)), room?.Email ?? "(none)");
         if (!string.IsNullOrEmpty(occurrence.NameSuffix))
             _logger.LogInformation("DEV:   Topic: {Topic}", occurrence.NameSuffix);
         return Task.FromResult("fake-graph-id-" + Guid.NewGuid());

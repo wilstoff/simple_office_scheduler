@@ -17,6 +17,10 @@ namespace SimpleOfficeScheduler.Services.Calendar;
 ///   interval of 2.
 /// - The expander counts week cycles from the event's own start day, so FirstDayOfWeek is anchored
 ///   to the start day rather than left at Graph's Sunday default.
+/// - An interval below 1 is clamped to 1 through the expander's own SafeInterval, because the
+///   form's "Every" box binds 0 when cleared. Graph rejects a 0 interval, and the series sync
+///   swallows the rejection, so leaving it unclamped silently produced a recurring workshop with no
+///   Graph series and no room booked.
 ///
 /// MaxOccurrences is not mapped. A numbered range cannot be rolled forward as the room booking
 /// window advances, so workshops reject MaxOccurrences at validation instead.
@@ -40,12 +44,12 @@ public static class GraphRecurrenceMapper
             RecurrenceType.Daily => new GraphRecurrencePattern
             {
                 Type = RecurrencePatternType.Daily,
-                Interval = pattern.Interval
+                Interval = RecurrenceExpander.SafeInterval(pattern.Interval)
             },
             RecurrenceType.Weekly => new GraphRecurrencePattern
             {
                 Type = RecurrencePatternType.Weekly,
-                Interval = pattern.Interval,
+                Interval = RecurrenceExpander.SafeInterval(pattern.Interval),
                 DaysOfWeek = days,
                 FirstDayOfWeek = startDay
             },
@@ -59,7 +63,7 @@ public static class GraphRecurrenceMapper
             RecurrenceType.Monthly => new GraphRecurrencePattern
             {
                 Type = RecurrencePatternType.AbsoluteMonthly,
-                Interval = pattern.Interval,
+                Interval = RecurrenceExpander.SafeInterval(pattern.Interval),
                 DayOfMonth = startDate.Day
             },
             _ => throw new ArgumentOutOfRangeException(

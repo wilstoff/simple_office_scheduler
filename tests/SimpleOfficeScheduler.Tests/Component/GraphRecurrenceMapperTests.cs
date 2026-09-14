@@ -148,4 +148,30 @@ public class GraphRecurrenceMapperTests
 
         Assert.Equal(new Microsoft.Kiota.Abstractions.Date(2027, 3, 1), result!.Range!.EndDate);
     }
+
+    /// <summary>
+    /// RecurrenceExpander.SafeInterval clamps an interval below 1 to 1, because the form's "Every"
+    /// box binds 0 when cleared. The mapper has to clamp the same way: Graph rejects a 0 interval
+    /// outright, and the rejection is swallowed by the try/catch around the series sync — so the
+    /// app ends up with a recurring workshop whose Graph series was never created or updated, and
+    /// therefore whose room was never booked.
+    /// </summary>
+    [Theory]
+    [InlineData(RecurrenceType.Daily)]
+    [InlineData(RecurrenceType.Weekly)]
+    [InlineData(RecurrenceType.Monthly)]
+    public void AnIntervalBelowOne_IsClampedTheSameWayTheExpanderClampsIt(RecurrenceType type)
+    {
+        var result = GraphRecurrenceMapper.Map(MakeEvent(type, 0), new LocalDate(2027, 3, 1));
+
+        Assert.Equal(1, result!.Pattern!.Interval);
+    }
+
+    [Fact]
+    public void ANegativeInterval_IsAlsoClamped()
+    {
+        var result = GraphRecurrenceMapper.Map(MakeEvent(RecurrenceType.Weekly, -3), new LocalDate(2027, 3, 1));
+
+        Assert.Equal(1, result!.Pattern!.Interval);
+    }
 }

@@ -102,6 +102,66 @@ public class RoomBookingTests : IntegrationTestBase
             roomEmail: "room-a@test.local");
 
         Assert.Equal("room-a@test.local", evt.RoomEmail);
+
+        var stored = await LoadEventAsync(evt.Id);
+        Assert.All(stored.Occurrences, o =>
+            Assert.Equal(RoomBookingStatus.Pending, o.RoomBookingStatus));
+    }
+
+    /// <summary>
+    /// Office hours have no Graph meeting until the first signup creates one, and that meeting has
+    /// to carry the room: there is nothing for SetRoomAsync to patch beforehand, so this is the only
+    /// chance to book it. It used to be left off, after which the poller found no room on the
+    /// meeting and reported Failed for a booking the app had never sent.
+    /// </summary>
+    [Fact]
+    public async Task SigningUpForOfficeHoursWithARoom_KeepsTheOccurrencePending()
+    {
+        await LoginAsync();
+
+        var evt = await CreateEventAsync("Room Office Hours", eventType: EventType.OfficeHours,
+            roomEmail: "room-a@test.local");
+        var occurrenceId = evt.Occurrences[0].Id;
+
+        var response = await SignUpForOccurrenceAsync(evt.Id, occurrenceId);
+        response.EnsureSuccessStatusCode();
+
+        var stored = await LoadEventAsync(evt.Id);
+        var occurrence = stored.Occurrences.First(o => o.Id == occurrenceId);
+        Assert.NotNull(occurrence.GraphEventId);
+        Assert.Equal(RoomBookingStatus.Pending, occurrence.RoomBookingStatus);
+    }
+
+    /// <summary>
+    /// Cancelling the last signup cancels the meeting, which releases the room with it. Leaving the
+    /// status at Booked would keep claiming a room the app no longer holds.
+    /// </summary>
+    [Fact]
+    public async Task CancellingTheLastOfficeHoursSignup_ReturnsTheOccurrenceToPending()
+    {
+        await LoginAsync();
+
+        var evt = await CreateEventAsync("Room Office Hours", eventType: EventType.OfficeHours,
+            roomEmail: "room-a@test.local");
+        var occurrenceId = evt.Occurrences[0].Id;
+        (await SignUpForOccurrenceAsync(evt.Id, occurrenceId)).EnsureSuccessStatusCode();
+
+        // Pretend the poller confirmed the booking on the meeting the signup created.
+        var dbFactory = Factory.Services.GetRequiredService<IDbContextFactory<AppDbContext>>();
+        await using (var seed = await dbFactory.CreateDbContextAsync())
+        {
+            var occ = await seed.EventOccurrences.FirstAsync(o => o.Id == occurrenceId);
+            occ.RoomBookingStatus = RoomBookingStatus.Booked;
+            await seed.SaveChangesAsync();
+        }
+
+        var response = await Client.DeleteAsync($"/api/events/{evt.Id}/signup/{occurrenceId}");
+        response.EnsureSuccessStatusCode();
+
+        var stored = await LoadEventAsync(evt.Id);
+        var occurrence = stored.Occurrences.First(o => o.Id == occurrenceId);
+        Assert.Null(occurrence.GraphEventId);
+        Assert.Equal(RoomBookingStatus.Pending, occurrence.RoomBookingStatus);
     }
 
     [Fact]

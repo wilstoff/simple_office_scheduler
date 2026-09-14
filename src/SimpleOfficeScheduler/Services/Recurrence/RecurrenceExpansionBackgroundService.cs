@@ -108,12 +108,7 @@ public class RecurrenceExpansionBackgroundService : BackgroundService
             {
                 if (!existingTimes.Contains(start))
                 {
-                    db.EventOccurrences.Add(new EventOccurrence
-                    {
-                        EventId = evt.Id,
-                        StartTime = start,
-                        EndTime = end
-                    });
+                    db.EventOccurrences.Add(EventOccurrence.For(evt.Id, start, end, evt.RoomEmail));
                     totalAdded++;
                 }
             }

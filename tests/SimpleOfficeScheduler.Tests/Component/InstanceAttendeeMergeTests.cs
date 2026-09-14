@@ -127,4 +127,80 @@ public class InstanceAttendeeMergeTests
 
         Assert.Equal(2, result.Count(a => a.Type == AttendeeType.Resource));
     }
+
+    // ── Series owners and meeting contributors ──────────────────────
+    //
+    // Changing a workshop's co-owners or a tech meeting's contributors patches the attendee list on
+    // the series master or the standalone meeting. Both patches used to send people only, which
+    // cancelled the room's hold on the whole event — and because SetRoomAsync runs before
+    // SetCoOwnersAsync on both edit paths, saving an event with co-owners undid the room booking it
+    // had just made.
+
+    [Fact]
+    public void RoomResourceOnTheSeries_SurvivesAnOwnerChange()
+    {
+        var result = GraphCalendarService.MergeRequiredAttendees(
+            new[] { RoomAttendee }, new[] { User("Owner", "owner@corp.com") });
+
+        var room = Assert.Single(result, a => a.Type == AttendeeType.Resource);
+        Assert.Equal("training-room@corp.com", room.EmailAddress!.Address);
+    }
+
+    [Fact]
+    public void RoomResourceOnAMeeting_SurvivesAContributorChange()
+    {
+        var people = new[] { User("Owner", "owner@corp.com"), User("Contributor", "contrib@corp.com") };
+
+        var result = GraphCalendarService.MergeRequiredAttendees(new[] { RoomAttendee }, people);
+
+        Assert.Single(result, a => a.Type == AttendeeType.Resource);
+        Assert.Equal(
+            new[] { "owner@corp.com", "contrib@corp.com" },
+            result.Where(a => a.Type == AttendeeType.Required).Select(a => a.EmailAddress!.Address));
+    }
+
+    [Fact]
+    public void PeopleAreReplacedNotMerged()
+    {
+        // A removed co-owner or contributor has to actually come off the invite.
+        var existing = new[]
+        {
+            RoomAttendee,
+            new Attendee
+            {
+                EmailAddress = new EmailAddress { Address = "removed@corp.com", Name = "Removed" },
+                Type = AttendeeType.Required
+            }
+        };
+
+        var result = GraphCalendarService.MergeRequiredAttendees(
+            existing, new[] { User("Owner", "owner@corp.com") });
+
+        Assert.DoesNotContain("removed@corp.com", result.Select(a => a.EmailAddress!.Address));
+        Assert.Contains("training-room@corp.com", result.Select(a => a.EmailAddress!.Address));
+    }
+
+    [Fact]
+    public void MergeRequiredAttendees_HandlesNoResourceAndNullExisting()
+    {
+        var owners = new[] { User("Owner", "owner@corp.com") };
+
+        Assert.Single(GraphCalendarService.MergeRequiredAttendees(Array.Empty<Attendee>(), owners));
+        Assert.Single(GraphCalendarService.MergeRequiredAttendees(null, owners));
+    }
+
+    [Fact]
+    public void MergeRequiredAttendees_PreservesEveryResource()
+    {
+        var second = new Attendee
+        {
+            EmailAddress = new EmailAddress { Address = "projector@corp.com", Name = "Projector" },
+            Type = AttendeeType.Resource
+        };
+
+        var result = GraphCalendarService.MergeRequiredAttendees(
+            new[] { RoomAttendee, second }, new[] { User("Owner", "owner@corp.com") });
+
+        Assert.Equal(2, result.Count(a => a.Type == AttendeeType.Resource));
+    }
 }
