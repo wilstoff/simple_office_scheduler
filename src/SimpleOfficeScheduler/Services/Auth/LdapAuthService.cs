@@ -3,6 +3,7 @@ using Microsoft.Extensions.Options;
 using Novell.Directory.Ldap;
 using SimpleOfficeScheduler.Data;
 using SimpleOfficeScheduler.Models;
+using SimpleOfficeScheduler.Services.Ldap;
 
 namespace SimpleOfficeScheduler.Services.Auth;
 
@@ -10,17 +11,26 @@ public class LdapAuthService : IAuthenticationService
 {
     private readonly IDbContextFactory<AppDbContext> _dbFactory;
     private readonly ActiveDirectorySettings _adSettings;
+    private readonly ILdapConnectionFactory _ldapFactory;
     private readonly ILogger<LdapAuthService> _logger;
 
-    public LdapAuthService(IDbContextFactory<AppDbContext> dbFactory, IOptions<ActiveDirectorySettings> adSettings, ILogger<LdapAuthService> logger)
+    public LdapAuthService(IDbContextFactory<AppDbContext> dbFactory, IOptions<ActiveDirectorySettings> adSettings,
+        ILdapConnectionFactory ldapFactory, ILogger<LdapAuthService> logger)
     {
         _dbFactory = dbFactory;
         _adSettings = adSettings.Value;
+        _ldapFactory = ldapFactory;
         _logger = logger;
     }
 
     public async Task<AuthResult> ValidateAsync(string username, string password)
     {
+        // A simple bind with a name and an empty password is an "unauthenticated bind" (RFC 4513
+        // section 5.1.2). AD reports it as a success without checking any credential, so passing a
+        // blank password through would sign anyone in as anyone. Refuse it before binding.
+        if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
+            return AuthResult.Failed("Invalid username or password.");
+
         await using var db = await _dbFactory.CreateDbContextAsync();
 
         // First try local account (for seeded test user even when AD is enabled)
@@ -38,7 +48,7 @@ public class LdapAuthService : IAuthenticationService
         // Try LDAP bind
         try
         {
-            using var connection = new LdapConnection();
+            using var connection = _ldapFactory.Create();
             if (_adSettings.UseSsl)
             {
                 connection.SecureSocketLayer = true;
@@ -55,7 +65,7 @@ public class LdapAuthService : IAuthenticationService
 
             try
             {
-                var searchResults = await connection.SearchAsync(
+                var searchResults = connection.SearchAsync(
                     _adSettings.SearchBase,
                     LdapConnection.ScopeSub,
                     $"(sAMAccountName={EscapeLdapFilter(bindUsername)})",
