@@ -196,4 +196,46 @@ public class WorkshopSignupCalendarTests : IDisposable
         Assert.Equal("series-id", stored.GraphSeriesId);
         _calendarMock.Verify(c => c.CancelMeetingAsync(It.IsAny<string>(), It.IsAny<AppUser>()), Times.Never);
     }
+
+    [Fact]
+    public async Task RecurringWorkshop_CancellingAnOccurrenceWithNoSignups_CancelsItsSeriesInstance()
+    {
+        var (owner, _) = await SeedUsersAsync();
+        var start = Today.PlusDays(7);
+        var evt = await CreateWorkshopAsync(owner.Id, new RecurrencePattern
+        {
+            Type = RecurrenceType.Weekly,
+            Interval = 1,
+            DaysOfWeek = new List<DayOfWeek> { start.DayOfWeek.ToDayOfWeek() }
+        });
+
+        await using var db = _dbFactory.CreateDbContext();
+        var occurrenceId = db.EventOccurrences.Where(o => o.EventId == evt.Id).OrderBy(o => o.StartTime).First().Id;
+
+        // Nobody signed up, so no instance id is cached on the occurrence yet. The instance still
+        // sits on every owner's calendar and has to come off it.
+        var (success, error) = await _sut.CancelOccurrenceAsync(occurrenceId, owner.Id);
+
+        Assert.True(success, error);
+        _calendarMock.Verify(c => c.GetInstanceIdAsync("series-id", It.IsAny<LocalDateTime>(), "America/Chicago"), Times.Once);
+        _calendarMock.Verify(c => c.CancelMeetingAsync("instance-id", It.Is<AppUser>(u => u.Id == owner.Id)), Times.Once);
+        _calendarMock.Verify(c => c.CancelMeetingAsync("series-id", It.IsAny<AppUser>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task NonRecurringWorkshop_CancellingTheOccurrence_CancelsTheMeeting()
+    {
+        var (owner, _) = await SeedUsersAsync();
+        var evt = await CreateWorkshopAsync(owner.Id, recurrence: null);
+
+        await using var db = _dbFactory.CreateDbContext();
+        var occurrenceId = db.EventOccurrences.First(o => o.EventId == evt.Id).Id;
+
+        var (success, error) = await _sut.CancelOccurrenceAsync(occurrenceId, owner.Id);
+
+        Assert.True(success, error);
+        _calendarMock.Verify(c => c.GetInstanceIdAsync(
+            It.IsAny<string>(), It.IsAny<LocalDateTime>(), It.IsAny<string>()), Times.Never);
+        _calendarMock.Verify(c => c.CancelMeetingAsync("series-id", It.Is<AppUser>(u => u.Id == owner.Id)), Times.Once);
+    }
 }

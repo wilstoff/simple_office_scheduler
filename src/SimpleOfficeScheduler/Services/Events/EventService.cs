@@ -502,6 +502,28 @@ public class EventService : IEventService
         occurrence.IsCancelled = true;
         await db.SaveChangesAsync();
 
+        // A workshop occurrence is on Teams from the moment the series is created, but its instance
+        // id is only cached once someone signs up. Without this lookup, cancelling a date nobody
+        // signed up for left the instance on every owner's calendar.
+        if (occurrence.Event.EventType == EventType.Workshop
+            && string.IsNullOrEmpty(occurrence.GraphEventId)
+            && !string.IsNullOrEmpty(occurrence.Event.GraphSeriesId))
+        {
+            try
+            {
+                // A one-off workshop's Graph object IS the meeting for its single occurrence.
+                occurrence.GraphEventId = occurrence.Event.Recurrence is null
+                    ? occurrence.Event.GraphSeriesId
+                    : await _calendarService.GetInstanceIdAsync(
+                        occurrence.Event.GraphSeriesId, occurrence.StartTime, occurrence.Event.TimeZoneId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to resolve the Teams series instance to cancel for occurrence {OccurrenceId} (Event: {EventTitle}, GraphSeriesId: {GraphSeriesId})",
+                    occurrenceId, occurrence.Event.Title, occurrence.Event.GraphSeriesId);
+            }
+        }
+
         // Cancel calendar invite if exists
         if (!string.IsNullOrEmpty(occurrence.GraphEventId))
         {
