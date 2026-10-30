@@ -134,4 +134,53 @@ public class LdapAuthServiceTests : IDisposable
         Assert.False(result.Success);
         Assert.False(await _db.Users.AnyAsync());
     }
+
+    [Fact]
+    public async Task SignIn_AttributeLookupFails_KeepsStoredEmail()
+    {
+        _db.Users.Add(new AppUser
+        {
+            Username = "someone",
+            DisplayName = "Some One",
+            Email = "someone@real.example",
+            IsLocalAccount = false
+        });
+        await _db.SaveChangesAsync();
+        _ldap.Setup(c => c.SearchAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<string>(),
+                It.IsAny<string[]>(), It.IsAny<bool>()))
+            .Throws(new LdapException("Insufficient access", LdapException.InsufficientAccessRights, null));
+
+        var result = await _sut.ValidateAsync("someone", "correct horse");
+
+        Assert.True(result.Success);
+        Assert.Equal("someone@real.example", result.User!.Email);
+        Assert.Equal("Some One", result.User.DisplayName);
+    }
+
+    [Fact]
+    public async Task SignIn_AdEntryWithoutMail_UsesUserPrincipalName()
+    {
+        var attrs = new LdapAttributeSet();
+        attrs.Add(new LdapAttribute("displayName", "Some One"));
+        attrs.Add(new LdapAttribute("userPrincipalName", "someone@real.example"));
+        var entry = new Mock<ILdapEntry>();
+        entry.Setup(e => e.GetAttributeSet()).Returns(attrs);
+        _ldap.Setup(c => c.SearchAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<string>(),
+                It.IsAny<string[]>(), It.IsAny<bool>()))
+            .Returns(Entries(entry.Object));
+
+        var result = await _sut.ValidateAsync("someone", "correct horse");
+
+        Assert.True(result.Success);
+        Assert.Equal("someone@real.example", result.User!.Email);
+    }
+
+    private static async IAsyncEnumerable<ILdapEntry> Entries(params ILdapEntry[] entries)
+    {
+        foreach (var entry in entries)
+        {
+            await Task.Yield();
+            yield return entry;
+        }
+    }
 }

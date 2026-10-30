@@ -59,9 +59,9 @@ public class LdapAuthService : IAuthenticationService
             var bindDn = $"{_adSettings.Domain}\\{bindUsername}";
             await connection.BindAsync(bindDn, password);
 
-            // Search for user attributes
-            string displayName = bindUsername;
-            string email = $"{bindUsername}@{_adSettings.Domain.ToLower()}";
+            // Search for user attributes. Both stay null unless AD returns the entry.
+            string? displayName = null;
+            string? email = null;
 
             try
             {
@@ -69,17 +69,15 @@ public class LdapAuthService : IAuthenticationService
                     _adSettings.SearchBase,
                     LdapConnection.ScopeSub,
                     $"(sAMAccountName={EscapeLdapFilter(bindUsername)})",
-                    new[] { "displayName", "mail" },
+                    AdUserAttributes.Requested,
                     false
                 );
 
                 await foreach (var entry in searchResults)
                 {
                     var attrs = entry.GetAttributeSet();
-                    if (attrs.ContainsKey("displayName"))
-                        displayName = attrs["displayName"].StringValue ?? displayName;
-                    if (attrs.ContainsKey("mail"))
-                        email = attrs["mail"].StringValue ?? email;
+                    displayName = AdUserAttributes.Get(attrs, "displayName") ?? bindUsername;
+                    email = AdUserAttributes.ResolveEmail(attrs, bindUsername, _adSettings);
                     break; // Only need the first result
                 }
             }
@@ -95,16 +93,18 @@ public class LdapAuthService : IAuthenticationService
                 user = new AppUser
                 {
                     Username = bindUsername,
-                    DisplayName = displayName,
-                    Email = email,
+                    DisplayName = displayName ?? bindUsername,
+                    Email = email ?? AdUserAttributes.FallbackEmail(bindUsername, _adSettings),
                     IsLocalAccount = false,
                     CreatedAt = NodaTime.SystemClock.Instance.GetCurrentInstant()
                 };
                 db.Users.Add(user);
             }
-            else
+            else if (email is not null)
             {
-                user.DisplayName = displayName;
+                // Only overwrite with what AD returned. A failed lookup must not replace a good
+                // address with a guess.
+                user.DisplayName = displayName!;
                 user.Email = email;
             }
 
