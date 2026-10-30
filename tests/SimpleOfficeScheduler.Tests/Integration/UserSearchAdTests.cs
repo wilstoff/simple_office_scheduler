@@ -224,6 +224,127 @@ public class UserSearchAdTests : IAsyncLifetime
         Assert.False(dbUser.IsLocalAccount);
     }
 
+    // The local row for an AD user is only a copy of AD. A copy saved with a made-up address
+    // ("jdoe@corp") used to win over AD forever: picking the user again returned the stale row,
+    // and Teams invites went to an address that does not exist.
+
+    [Fact]
+    public async Task EnsureUser_ExistingAdUser_RefreshesStaleEmailFromAd()
+    {
+        var id = await SeedAdUserAsync("staleuser", "staleuser", "staleuser@testdomain");
+        SetupAdSearchResults(("staleuser", "Stale User", "staleuser@real.example"));
+        await LoginAsync();
+
+        var response = await _client.PostAsJsonAsync("/api/users/ensure", new { username = "staleuser" });
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var result = await response.Content.ReadFromJsonAsync<UserSearchResultDto>();
+        Assert.NotNull(result);
+        Assert.Equal(id, result.Id);
+        Assert.Equal("staleuser@real.example", result.Email);
+        Assert.Equal("Stale User", result.DisplayName);
+
+        var dbUser = await GetUserAsync("staleuser");
+        Assert.Equal("staleuser@real.example", dbUser.Email);
+        Assert.Equal("Stale User", dbUser.DisplayName);
+    }
+
+    [Fact]
+    public async Task Search_ExistingAdUser_RefreshesStaleEmailFromAd()
+    {
+        await SeedAdUserAsync("staleuser", "staleuser", "staleuser@testdomain");
+        SetupAdSearchResults(("staleuser", "Stale User", "staleuser@real.example"));
+        await LoginAsync();
+
+        var response = await _client.GetAsync("/api/users/search?q=staleuser");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var results = await response.Content.ReadFromJsonAsync<List<UserSearchResultDto>>();
+        Assert.NotNull(results);
+        var match = Assert.Single(results, r => r.Username == "staleuser");
+        Assert.False(match.IsAdOnly);
+        Assert.Equal("staleuser@real.example", match.Email);
+
+        var dbUser = await GetUserAsync("staleuser");
+        Assert.Equal("staleuser@real.example", dbUser.Email);
+    }
+
+    [Fact]
+    public async Task EnsureUser_ExistingLocalAccount_IsNotOverwrittenByAd()
+    {
+        await SeedUserAsync("localonly", "Local Only");
+        SetupAdSearchResults(("localonly", "Someone Else In AD", "someone.else@real.example"));
+        await LoginAsync();
+
+        var response = await _client.PostAsJsonAsync("/api/users/ensure", new { username = "localonly" });
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var dbUser = await GetUserAsync("localonly");
+        Assert.Equal("localonly@test.local", dbUser.Email);
+        Assert.Equal("Local Only", dbUser.DisplayName);
+    }
+
+    [Fact]
+    public async Task EnsureUser_ExistingAdUser_AdUnreachable_ReturnsStoredRow()
+    {
+        var id = await SeedAdUserAsync("known", "Known User", "known@real.example");
+        _mockConnection.Setup(c => c.ConnectAsync(It.IsAny<string>(), It.IsAny<int>()))
+            .ThrowsAsync(new LdapException("Connection failed", 91, "test"));
+        await LoginAsync();
+
+        var response = await _client.PostAsJsonAsync("/api/users/ensure", new { username = "known" });
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var result = await response.Content.ReadFromJsonAsync<UserSearchResultDto>();
+        Assert.NotNull(result);
+        Assert.Equal(id, result.Id);
+        Assert.Equal("known@real.example", result.Email);
+    }
+
+    // With no mail attribute, the old fallback was "<user>@<NetBIOS domain>", which is not an address.
+
+    [Fact]
+    public async Task EnsureUser_AdEntryWithoutMail_UsesUserPrincipalName()
+    {
+        SetupAdEntries(CreateAttributeSet("nomail", "No Mail", mail: null, userPrincipalName: "nomail@real.example"));
+        await LoginAsync();
+
+        var response = await _client.PostAsJsonAsync("/api/users/ensure", new { username = "nomail" });
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var result = await response.Content.ReadFromJsonAsync<UserSearchResultDto>();
+        Assert.NotNull(result);
+        Assert.Equal("nomail@real.example", result.Email);
+    }
+
+    [Fact]
+    public async Task EnsureUser_AdEntryWithoutMailOrUpn_UsesSearchBaseDomainNotNetBiosName()
+    {
+        SetupAdEntries(CreateAttributeSet("nomail", "No Mail", mail: null, userPrincipalName: null));
+        await LoginAsync();
+
+        var response = await _client.PostAsJsonAsync("/api/users/ensure", new { username = "nomail" });
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var result = await response.Content.ReadFromJsonAsync<UserSearchResultDto>();
+        Assert.NotNull(result);
+        Assert.Equal("nomail@test.local", result.Email);
+    }
+
+    [Fact]
+    public async Task Search_AdEntryWithoutMail_UsesUserPrincipalName()
+    {
+        SetupAdEntries(CreateAttributeSet("nomail", "No Mail", mail: null, userPrincipalName: "nomail@real.example"));
+        await LoginAsync();
+
+        var response = await _client.GetAsync("/api/users/search?q=nomail");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var results = await response.Content.ReadFromJsonAsync<List<UserSearchResultDto>>();
+        Assert.NotNull(results);
+        Assert.Equal("nomail@real.example", Assert.Single(results, r => r.Username == "nomail").Email);
+    }
+
     // --- Helpers ---
 
     private async Task LoginAsync()
@@ -255,28 +376,61 @@ public class UserSearchAdTests : IAsyncLifetime
         }
     }
 
+    private async Task<int> SeedAdUserAsync(string username, string displayName, string email)
+    {
+        var dbFactory = _factory.Services.GetRequiredService<IDbContextFactory<AppDbContext>>();
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var user = new AppUser
+        {
+            Username = username,
+            DisplayName = displayName,
+            Email = email,
+            IsLocalAccount = false,
+            CreatedAt = SystemClock.Instance.GetCurrentInstant()
+        };
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
+        return user.Id;
+    }
+
+    private async Task<AppUser> GetUserAsync(string username)
+    {
+        var dbFactory = _factory.Services.GetRequiredService<IDbContextFactory<AppDbContext>>();
+        await using var db = await dbFactory.CreateDbContextAsync();
+        return await db.Users.SingleAsync(u => u.Username == username);
+    }
+
     private void SetupAdSearchResults(params (string Username, string DisplayName, string Email)[] users)
     {
-        var entries = users.Select(u =>
+        SetupAdEntries(users.Select(u => CreateAttributeSet(u.Username, u.DisplayName, u.Email)).ToArray());
+    }
+
+    private void SetupAdEntries(params LdapAttributeSet[] attributeSets)
+    {
+        var entries = attributeSets.Select(attrs =>
         {
             var entry = new Mock<ILdapEntry>();
-            entry.Setup(e => e.GetAttributeSet())
-                .Returns(CreateAttributeSet(u.Username, u.DisplayName, u.Email));
+            entry.Setup(e => e.GetAttributeSet()).Returns(attrs);
             return entry.Object;
         }).ToArray();
 
+        // A fresh enumerable per call: one test can search and then ensure.
         _mockConnection.Setup(c => c.SearchAsync(
                 It.IsAny<string>(), It.IsAny<int>(), It.IsAny<string>(),
                 It.IsAny<string[]>(), It.IsAny<bool>()))
-            .Returns(ToAsyncEnumerable(entries));
+            .Returns(() => ToAsyncEnumerable(entries));
     }
 
-    private static LdapAttributeSet CreateAttributeSet(string username, string displayName, string email)
+    private static LdapAttributeSet CreateAttributeSet(
+        string username, string displayName, string? mail, string? userPrincipalName = null)
     {
         var attrs = new LdapAttributeSet();
         attrs.Add(new LdapAttribute("sAMAccountName", username));
         attrs.Add(new LdapAttribute("displayName", displayName));
-        attrs.Add(new LdapAttribute("mail", email));
+        if (mail is not null)
+            attrs.Add(new LdapAttribute("mail", mail));
+        if (userPrincipalName is not null)
+            attrs.Add(new LdapAttribute("userPrincipalName", userPrincipalName));
         return attrs;
     }
 

@@ -4,6 +4,7 @@ using Novell.Directory.Ldap;
 using SimpleOfficeScheduler.Data;
 using SimpleOfficeScheduler.Models;
 using SimpleOfficeScheduler.Services.Ldap;
+using ILdapConnection = SimpleOfficeScheduler.Services.Ldap.ILdapConnection;
 
 namespace SimpleOfficeScheduler.Services.Users;
 
@@ -59,9 +60,7 @@ public class UserSearchService : IUserSearchService
             .ToListAsync();
 
         // Search Active Directory if enabled and service account is configured
-        if (_adSettings.Enabled
-            && !string.IsNullOrEmpty(_adSettings.ServiceAccountUsername)
-            && !string.IsNullOrEmpty(_adSettings.ServiceAccountPassword))
+        if (IsAdConfigured)
         {
             var adResults = await SearchAdAsync(term, maxResults);
             var localUsernames = new HashSet<string>(
@@ -71,7 +70,13 @@ public class UserSearchService : IUserSearchService
             foreach (var adUser in adResults)
             {
                 if (localUsernames.Contains(adUser.Username))
-                    continue; // Already in local results
+                {
+                    // Already in local results, but the local row may be a stale copy of AD
+                    var local = dbResults.First(r =>
+                        string.Equals(r.Username, adUser.Username, StringComparison.OrdinalIgnoreCase));
+                    await RefreshFromAdAsync(db, local, adUser);
+                    continue;
+                }
 
                 // Check if this AD user is excluded
                 if (excludeUserId.HasValue)
@@ -97,77 +102,107 @@ public class UserSearchService : IUserSearchService
     {
         await using var db = await _dbFactory.CreateDbContextAsync();
 
-        // Check if already in local DB
+        // Check if already in local DB. A local account is not an AD user, so it is final.
         var existing = await db.Users.FirstOrDefaultAsync(u => u.Username == username);
-        if (existing is not null)
-        {
-            return new UserSearchResult
-            {
-                Id = existing.Id,
-                DisplayName = existing.DisplayName,
-                Username = existing.Username,
-                Email = existing.Email,
-                IsAdOnly = false
-            };
-        }
+        if (existing is not null && (existing.IsLocalAccount || !IsAdConfigured))
+            return ToResult(existing);
 
         // Must have AD enabled to look up and create the user
-        if (!_adSettings.Enabled
-            || string.IsNullOrEmpty(_adSettings.ServiceAccountUsername)
-            || string.IsNullOrEmpty(_adSettings.ServiceAccountPassword))
-        {
+        if (!IsAdConfigured)
             return null;
-        }
 
-        // Look up in AD and create local record
+        // An AD user's row is only a copy of AD, so look them up even when the row exists. Returning
+        // the stored row unchanged kept a bad address (one saved as "jdoe@corp") forever.
+        var adUser = await LookupAdUserAsync(username);
+        if (adUser is null)
+            return existing is null ? null : ToResult(existing);
+
+        if (existing is null)
+        {
+            existing = new AppUser
+            {
+                Username = username,
+                IsLocalAccount = false,
+                CreatedAt = NodaTime.SystemClock.Instance.GetCurrentInstant()
+            };
+            db.Users.Add(existing);
+        }
+        existing.DisplayName = adUser.DisplayName;
+        existing.Email = adUser.Email;
+        await db.SaveChangesAsync();
+
+        return ToResult(existing);
+    }
+
+    private bool IsAdConfigured =>
+        _adSettings.Enabled
+        && !string.IsNullOrEmpty(_adSettings.ServiceAccountUsername)
+        && !string.IsNullOrEmpty(_adSettings.ServiceAccountPassword);
+
+    private static UserSearchResult ToResult(AppUser user) => new()
+    {
+        Id = user.Id,
+        DisplayName = user.DisplayName,
+        Username = user.Username,
+        Email = user.Email,
+        IsAdOnly = false
+    };
+
+    /// <summary>
+    /// Brings a local search result and its row in line with AD. Local accounts are not AD users and
+    /// are left alone.
+    /// </summary>
+    private static async Task RefreshFromAdAsync(AppDbContext db, UserSearchResult local, UserSearchResult adUser)
+    {
+        var row = await db.Users.FirstOrDefaultAsync(u => u.Id == local.Id && !u.IsLocalAccount);
+        if (row is null)
+            return;
+
+        row.DisplayName = adUser.DisplayName;
+        row.Email = adUser.Email;
+        await db.SaveChangesAsync();
+
+        local.DisplayName = row.DisplayName;
+        local.Email = row.Email;
+    }
+
+    private async Task<ILdapConnection> OpenServiceConnectionAsync()
+    {
+        var connection = _ldapFactory.Create();
         try
         {
-            using var connection = _ldapFactory.Create();
             if (_adSettings.UseSsl)
                 connection.SecureSocketLayer = true;
 
             await connection.ConnectAsync(_adSettings.Host, _adSettings.Port);
             var bindDn = $"{_adSettings.Domain}\\{_adSettings.ServiceAccountUsername}";
             await connection.BindAsync(bindDn, _adSettings.ServiceAccountPassword!);
+            return connection;
+        }
+        catch
+        {
+            connection.Dispose();
+            throw;
+        }
+    }
+
+    /// <summary>The AD entry for an exact sAMAccountName, or null if there is none or AD fails.</summary>
+    private async Task<UserSearchResult?> LookupAdUserAsync(string username)
+    {
+        try
+        {
+            using var connection = await OpenServiceConnectionAsync();
 
             var filter = $"(sAMAccountName={EscapeLdapFilter(username)})";
             var searchResults = connection.SearchAsync(
                 _adSettings.SearchBase,
                 LdapConnection.ScopeSub,
                 filter,
-                new[] { "displayName", "mail", "sAMAccountName" },
+                AdUserAttributes.Requested,
                 false);
 
             await foreach (var entry in searchResults)
-            {
-                var attrs = entry.GetAttributeSet();
-                var displayName = attrs.ContainsKey("displayName")
-                    ? attrs["displayName"].StringValue ?? username
-                    : username;
-                var email = attrs.ContainsKey("mail")
-                    ? attrs["mail"].StringValue ?? $"{username}@{_adSettings.Domain.ToLower()}"
-                    : $"{username}@{_adSettings.Domain.ToLower()}";
-
-                var user = new AppUser
-                {
-                    Username = username,
-                    DisplayName = displayName,
-                    Email = email,
-                    IsLocalAccount = false,
-                    CreatedAt = NodaTime.SystemClock.Instance.GetCurrentInstant()
-                };
-                db.Users.Add(user);
-                await db.SaveChangesAsync();
-
-                return new UserSearchResult
-                {
-                    Id = user.Id,
-                    DisplayName = user.DisplayName,
-                    Username = user.Username,
-                    Email = user.Email,
-                    IsAdOnly = false
-                };
-            }
+                return ToAdResult(entry.GetAttributeSet(), username);
         }
         catch (LdapException ex)
         {
@@ -183,13 +218,7 @@ public class UserSearchService : IUserSearchService
 
         try
         {
-            using var connection = _ldapFactory.Create();
-            if (_adSettings.UseSsl)
-                connection.SecureSocketLayer = true;
-
-            await connection.ConnectAsync(_adSettings.Host, _adSettings.Port);
-            var bindDn = $"{_adSettings.Domain}\\{_adSettings.ServiceAccountUsername}";
-            await connection.BindAsync(bindDn, _adSettings.ServiceAccountPassword!);
+            using var connection = await OpenServiceConnectionAsync();
 
             var escapedTerm = EscapeLdapFilter(term);
             var filter = $"(&(objectClass=user)(|(displayName=*{escapedTerm}*)(sAMAccountName=*{escapedTerm}*)(mail=*{escapedTerm}*)))";
@@ -198,34 +227,17 @@ public class UserSearchService : IUserSearchService
                 _adSettings.SearchBase,
                 LdapConnection.ScopeSub,
                 filter,
-                new[] { "displayName", "mail", "sAMAccountName" },
+                AdUserAttributes.Requested,
                 false);
 
             await foreach (var entry in searchResults)
             {
                 var attrs = entry.GetAttributeSet();
-                var username = attrs.ContainsKey("sAMAccountName")
-                    ? attrs["sAMAccountName"].StringValue ?? ""
-                    : "";
-
-                if (string.IsNullOrEmpty(username))
+                var username = AdUserAttributes.Get(attrs, "sAMAccountName");
+                if (username is null)
                     continue;
 
-                var displayName = attrs.ContainsKey("displayName")
-                    ? attrs["displayName"].StringValue ?? username
-                    : username;
-                var email = attrs.ContainsKey("mail")
-                    ? attrs["mail"].StringValue ?? $"{username}@{_adSettings.Domain.ToLower()}"
-                    : $"{username}@{_adSettings.Domain.ToLower()}";
-
-                results.Add(new UserSearchResult
-                {
-                    Id = 0,
-                    DisplayName = displayName,
-                    Username = username,
-                    Email = email,
-                    IsAdOnly = true
-                });
+                results.Add(ToAdResult(attrs, username));
 
                 if (results.Count >= maxResults)
                     break;
@@ -238,6 +250,15 @@ public class UserSearchService : IUserSearchService
 
         return results;
     }
+
+    private UserSearchResult ToAdResult(LdapAttributeSet attrs, string username) => new()
+    {
+        Id = 0,
+        DisplayName = AdUserAttributes.Get(attrs, "displayName") ?? username,
+        Username = username,
+        Email = AdUserAttributes.ResolveEmail(attrs, username, _adSettings),
+        IsAdOnly = true
+    };
 
     private static string EscapeLdapFilter(string input)
     {

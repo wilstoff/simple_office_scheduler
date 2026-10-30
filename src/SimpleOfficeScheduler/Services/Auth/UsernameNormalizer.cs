@@ -22,7 +22,7 @@ public static class UsernameNormalizer
         return username;
     }
 
-    private static string? ExtractDomainFromSearchBase(string searchBase)
+    public static string? ExtractDomainFromSearchBase(string searchBase)
     {
         if (string.IsNullOrWhiteSpace(searchBase))
             return null;
